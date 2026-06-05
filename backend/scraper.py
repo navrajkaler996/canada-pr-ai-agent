@@ -64,4 +64,4 @@ conn.commit()
 cur.close()
 conn.close()
 
-print(f"Successfully saved {len(cleaned)} draws to database")
+# print(f"Successfully saved {len(cleaned)} draws to database")

@@ -384,26 +384,26 @@ def calculate_crs(profile):
 #     "spouse_canadian_work_years": 0
 # }
 
+# my profile test
+# profile = {
+#     "has_spouse": False,
+#     "age": 29,
+#     "education": "two_or_more",
+#     "clb_speaking": 9,
+#     "clb_listening": 10,
+#     "clb_reading": 10,
+#     "clb_writing": 10,
+#     "canadian_work_years": 0,
+#     "foreign_work_years": 3,
+#     "first_language": "english",
+#     "has_canadian_sibling": True,
+#     "french_clb_scores": [],
+#     "canadian_education_years": 1,
+#     "has_provincial_nomination": False
+# }
 
-profile = {
-    "has_spouse": False,
-    "age": 29,
-    "education": "two_or_more",
-    "clb_speaking": 9,
-    "clb_listening": 10,
-    "clb_reading": 10,
-    "clb_writing": 10,
-    "canadian_work_years": 0,
-    "foreign_work_years": 3,
-    "first_language": "english",
-    "has_canadian_sibling": True,
-    "french_clb_scores": [],
-    "canadian_education_years": 1,
-    "has_provincial_nomination": False
-}
-
-result = calculate_crs(profile)
-print(f"Total CRS Score: {result['total']}")
-print(f"Breakdown: {result['breakdown']}")
+# result = calculate_crs(profile)
+# print(f"Total CRS Score: {result['total']}")
+# print(f"Breakdown: {result['breakdown']}")
 
 
