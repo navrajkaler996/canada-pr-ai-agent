@@ -51,7 +51,7 @@ export default function Home() {
   const WELCOME = {
     role: "assistant",
     content:
-      "Hi! I'm **PRCompass** — your Canadian Express Entry guide.\n\nI can calculate your CRS score, analyze recent draws, and tell you exactly where you stand. What would you like to do?",
+      "Hi! I'm **CarPR.ai** — your Canadian Express Entry guide.\n\nI can calculate your CRS score, analyze recent draws, and tell you exactly where you stand. What would you like to do?",
     showQuickReplies: true,
     options: [
       { label: "Calculate my CRS", value: "calculate_crs" },
@@ -391,7 +391,7 @@ export default function Home() {
                 color: "var(--color-text-primary)",
                 letterSpacing: "-0.3px",
               }}>
-              PRCompass
+              CarPR.ai
             </span>
           </div>
           <p
@@ -432,7 +432,7 @@ export default function Home() {
                 fontWeight: 500,
                 color: "var(--color-text-primary)",
               }}>
-              PRCompass
+              CarPR.ai
             </p>
             <p
               style={{
