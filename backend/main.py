@@ -2,8 +2,23 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from crs_calculator import calculate_crs
 from ita_estimator import get_ita_likelihood
+from fastapi.responses import StreamingResponse
+from ai_agent import chat, chat_stream
+
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
+
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class Profile(BaseModel):
     has_spouse: bool
@@ -62,3 +77,26 @@ def latest_draw():
         "draw_size": draw[5],
         "draw_crs": draw[6]
     }
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+@app.post("/chat")
+async def chat_endpoint(req: ChatRequest):
+    messages = [m.dict() for m in req.messages]
+    reply = await chat(messages)
+    return {"reply": reply}
+
+@app.post("/chat/stream")
+async def chat_stream_endpoint(req: ChatRequest):
+    messages = [m.dict() for m in req.messages]
+    return StreamingResponse(
+        chat_stream(messages),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
