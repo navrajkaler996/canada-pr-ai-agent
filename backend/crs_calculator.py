@@ -35,6 +35,8 @@ def get_education_points(education_level, has_spouse):
         "masters": 126,
         "phd": 140
     }
+
+    
     
     without_spouse = {
         "less_than_high_school": 0,
@@ -231,8 +233,11 @@ def get_skill_transferability_points(education_level, clb_scores, canadian_work_
         return 0
 
     # each sub-section capped at 50, total capped at 100
-    education_points = min(50, max(get_education_language_points(), get_education_canadian_work_points()))
-    foreign_work_points = min(50, max(get_foreign_work_language_points(), get_foreign_work_canadian_work_points()))
+ 
+    education_points = min(50, get_education_language_points() + get_education_canadian_work_points())
+    foreign_work_points = min(50, get_foreign_work_language_points() + get_foreign_work_canadian_work_points())
+    
+
     certificate_points = min(50, get_certificate_points())
 
     total = min(100, education_points + foreign_work_points + certificate_points)
