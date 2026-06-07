@@ -1,167 +1,70 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+
+import React, { useState, useRef, useEffect } from "react";
+import ChatMessage from "./components/ChatMessage";
+import {
+  getQuestion,
+  getFirstQuestionId,
+  getScoreMessage,
+  convertScoresToCLB,
+  isFlowComplete,
+  CLB_CONVERSION,
+} from "./data/questions.js";
 
 const RED = "#CC0000";
 
-// ── Tiny markdown renderer ──────────────────────────────────────────────────
-function Markdown({ text }) {
-  const lines = text.split("\n");
-  const elements = [];
-  let i = 0;
+// Build a message object from a question
+function messageFromQuestion(question, profile) {
+  const base = { role: "assistant", questionId: question.id };
 
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Blank line
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-
-    // Heading
-    if (line.startsWith("### ")) {
-      elements.push(
-        <h3
-          key={i}
-          style={{
-            fontsize: "16px",
-            fontWeight: 600,
-            margin: "12px 0 4px",
-            color: "var(--color-text-primary)",
-          }}>
-          {line.slice(4)}
-        </h3>,
-      );
-      i++;
-      continue;
-    }
-    if (line.startsWith("## ")) {
-      elements.push(
-        <h2
-          key={i}
-          style={{
-            fontSize: "16px",
-            fontWeight: 700,
-            margin: "14px 0 4px",
-            color: "var(--color-text-primary)",
-          }}>
-          {line.slice(3)}
-        </h2>,
-      );
-      i++;
-      continue;
-    }
-
-    // Bullet list
-    if (line.startsWith("- ") || line.startsWith("* ")) {
-      const items = [];
-      while (
-        i < lines.length &&
-        (lines[i].startsWith("- ") || lines[i].startsWith("* "))
-      ) {
-        items.push(
-          <li key={i} style={{ marginBottom: "3px" }}>
-            {renderInline(lines[i].slice(2))}
-          </li>,
-        );
-        i++;
-      }
-      elements.push(
-        <ul key={`ul-${i}`} style={{ paddingLeft: "18px", margin: "6px 0" }}>
-          {items}
-        </ul>,
-      );
-      continue;
-    }
-
-    // Numbered list
-    if (/^\d+\. /.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\d+\. /.test(lines[i])) {
-        items.push(
-          <li key={i} style={{ marginBottom: "3px" }}>
-            {renderInline(lines[i].replace(/^\d+\. /, ""))}
-          </li>,
-        );
-        i++;
-      }
-      elements.push(
-        <ol key={`ol-${i}`} style={{ paddingLeft: "18px", margin: "6px 0" }}>
-          {items}
-        </ol>,
-      );
-      continue;
-    }
-
-    // Normal paragraph
-    elements.push(
-      <p key={i} style={{ margin: "4px 0", lineHeight: "1.65" }}>
-        {renderInline(line)}
-      </p>,
-    );
-    i++;
+  if (question.type === "options") {
+    return { ...base, content: question.message, options: question.options };
   }
 
-  return <div style={{ fontsize: "16px" }}>{elements}</div>;
-}
+  if (question.type === "score_input") {
+    const testKey =
+      question.id === "first_language_scores"
+        ? "first_language_test"
+        : question.id === "spouse_language_scores"
+          ? "spouse_language_test"
+          : question.id === "second_language_scores"
+            ? "second_language_test"
+            : null;
+    const test = testKey ? profile[testKey] : null;
+    const hint = test ? CLB_CONVERSION[test]?.hint : "score";
 
-function renderInline(text) {
-  // Bold + italic + code inline
-  const parts = [];
-  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
-  let last = 0,
-    m;
-  while ((m = regex.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    if (m[0].startsWith("**"))
-      parts.push(<strong key={m.index}>{m[2]}</strong>);
-    else if (m[0].startsWith("*")) parts.push(<em key={m.index}>{m[3]}</em>);
-    else
-      parts.push(
-        <code
-          key={m.index}
-          style={{
-            background: "rgba(255,255,255,0.1)",
-            borderRadius: "3px",
-            padding: "1px 5px",
-            fontSize: "13px",
-            fontFamily: "monospace",
-          }}>
-          {m[4]}
-        </code>,
-      );
-    last = m.index + m[0].length;
+    return {
+      ...base,
+      content: getScoreMessage(question.id, profile),
+      scoreInput: { abilities: question.abilities, hint },
+    };
   }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
+
+  // type: "text"
+  return { ...base, content: question.message, options: null };
 }
 
-// ── Dummy sidebar data ──────────────────────────────────────────────────────
-const DUMMY_DRAWS = [
-  { date: "May 28, 2026", type: "French Language", crs: 409, itas: 4500 },
-  { date: "May 21, 2026", type: "General", crs: 524, itas: 3500 },
-  { date: "May 14, 2026", type: "CEC", crs: 491, itas: 3200 },
-  { date: "May 7, 2026", type: "PNP", crs: 741, itas: 1200 },
-  { date: "Apr 30, 2026", type: "General", crs: 519, itas: 4000 },
-];
-
-const TIPS = [
-  "CLB 10 in all abilities adds up to 50 CRS points vs CLB 9.",
-  "A provincial nomination adds 600 points — near-guaranteed ITA.",
-  "Canadian work experience is worth more than foreign experience.",
-  "French proficiency opens a lower-cutoff draw category.",
-  "A job offer from a Canadian employer can add 50–200 points.",
-];
-
-// ── Main component ──────────────────────────────────────────────────────────
 export default function Home() {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content:
-        "Hi! I'm **CanPR.ai**, your Canadian PR assistant. I can help you:\n- Calculate your **CRS score**\n- Estimate your **ITA chances**\n- Explain recent **Express Entry draws**\n\nLet's start — do you have a spouse or common-law partner?",
-    },
-  ]);
+  const firstId = getFirstQuestionId();
+  const firstQuestion = getQuestion(firstId);
+
+  const WELCOME = {
+    role: "assistant",
+    content:
+      "Hi! I'm **PRCompass** — your Canadian Express Entry guide.\n\nI can calculate your CRS score, analyze recent draws, and tell you exactly where you stand. What would you like to do?",
+    showQuickReplies: true,
+    options: [
+      { label: "Calculate my CRS", value: "calculate_crs" },
+      { label: "Latest draws", value: "latest_draws" },
+      { label: "Am I competitive?", value: "competitive" },
+      { label: "Just chat", value: "chat" },
+    ],
+  };
+
+  const [messages, setMessages] = useState([WELCOME]);
+  const [profile, setProfile] = useState({});
+  const [currentQuestionId, setCurrentQuestionId] = useState(null);
+  const [inCRSFlow, setInCRSFlow] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -172,12 +75,183 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = { role: "user", content: input };
+  // Move to next question
+  const advanceQuestion = (updatedProfile, currentId) => {
+    const current = getQuestion(currentId);
+    if (!current) return;
+
+    const nextId = current.next(updatedProfile);
+
+    if (nextId === null) {
+      finishCRSFlow(updatedProfile);
+      return;
+    }
+
+    const nextQuestion = getQuestion(nextId);
+    if (!nextQuestion) return;
+
+    setCurrentQuestionId(nextId);
+    setMessages((prev) => [
+      ...prev,
+      messageFromQuestion(nextQuestion, updatedProfile),
+    ]);
+  };
+
+  // Handle option button tap
+  const handleOptionSelect = (opt) => {
+    if (!inCRSFlow) {
+      if (opt.value === "calculate_crs") {
+        startCRSFlow();
+      } else {
+        sendToAI(opt.label);
+      }
+      return;
+    }
+
+    const userMsg = { role: "user", content: opt.label };
+    const updatedProfile = { ...profile, [currentQuestionId]: opt.value };
+    setProfile(updatedProfile);
+    setMessages((prev) => [...prev, userMsg]);
+    advanceQuestion(updatedProfile, currentQuestionId);
+  };
+
+  // Handle score input submission
+  const handleScoreSubmit = (scores) => {
+    const question = getQuestion(currentQuestionId);
+    const testKey =
+      currentQuestionId === "first_language_scores"
+        ? "first_language_test"
+        : currentQuestionId === "spouse_language_scores"
+          ? "spouse_language_test"
+          : currentQuestionId === "second_language_scores"
+            ? "second_language_test"
+            : null;
+    const test = testKey ? profile[testKey] : null;
+
+    const clb = convertScoresToCLB(test, scores);
+
+    const summary = question.abilities
+      .map((a) => `${a}: ${scores[a]}${clb ? ` (CLB ${clb[a]})` : ""}`)
+      .join(" · ");
+
+    const userMsg = { role: "user", content: summary };
+    const updatedProfile = {
+      ...profile,
+      [currentQuestionId]: scores,
+      [`${currentQuestionId}_clb`]: clb,
+    };
+
+    setProfile(updatedProfile);
+    setMessages((prev) => [...prev, userMsg]);
+    advanceQuestion(updatedProfile, currentQuestionId);
+  };
+
+  // Start CRS flow
+  const startCRSFlow = () => {
+    setInCRSFlow(true);
+    setCurrentQuestionId(firstId);
+    const firstMsg = messageFromQuestion(firstQuestion, {});
+    setMessages((prev) => [...prev, firstMsg]);
+  };
+
+  // Finish CRS flow — send profile to AI
+  const finishCRSFlow = async (finalProfile) => {
+    setInCRSFlow(false);
+    setCurrentQuestionId(null);
+
+    const completionMsg = { role: "user", content: "That's all my info!" };
+    setMessages((prev) => [...prev, completionMsg]);
+    setLoading(true);
+
+    // Map frontend profile → crs_calculator.py format
+    const hasSpouse = finalProfile.marital_status === "married_accompanying";
+    const firstCLB = finalProfile.first_language_scores_clb ?? {};
+    const secondCLB = finalProfile.second_language_scores_clb ?? null;
+    const spouseCLB = finalProfile.spouse_language_scores_clb ?? {};
+
+    const calcProfile = {
+      has_spouse: hasSpouse,
+      age: parseInt(finalProfile.age),
+      education: finalProfile.education,
+      clb_speaking: firstCLB.speaking ?? 0,
+      clb_listening: firstCLB.listening ?? 0,
+      clb_reading: firstCLB.reading ?? 0,
+      clb_writing: firstCLB.writing ?? 0,
+      canadian_work_years: finalProfile.canadian_experience ?? 0,
+      foreign_work_years: finalProfile.foreign_experience ?? 0,
+      first_language: ["CELPIP", "IELTS"].includes(
+        finalProfile.first_language_test,
+      )
+        ? "english"
+        : "french",
+      has_canadian_sibling: finalProfile.sibling_in_canada === true,
+      french_clb_scores: secondCLB
+        ? [
+            secondCLB.speaking,
+            secondCLB.listening,
+            secondCLB.reading,
+            secondCLB.writing,
+          ]
+        : [],
+      canadian_education_years:
+        finalProfile.canadian_education === "three_plus_years"
+          ? 3
+          : finalProfile.canadian_education === "one_two_years"
+            ? 1
+            : 0,
+      has_provincial_nomination: finalProfile.provincial_nomination === true,
+      ...(hasSpouse && {
+        spouse_education: finalProfile.spouse_education,
+        spouse_clb_speaking: spouseCLB.speaking ?? 0,
+        spouse_clb_listening: spouseCLB.listening ?? 0,
+        spouse_clb_reading: spouseCLB.reading ?? 0,
+        spouse_clb_writing: spouseCLB.writing ?? 0,
+        spouse_canadian_work_years:
+          finalProfile.spouse_canadian_experience ?? 0,
+      }),
+    };
+
+    try {
+      // Call real calculator
+      const calcRes = await fetch("http://localhost:8000/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(calcProfile),
+      });
+      const calcData = await calcRes.json();
+
+      // Send real result to AI to explain
+      const systemMsg = {
+        role: "user",
+        content: `The user just completed their CRS profile. Here is their REAL calculated CRS score from the official formula:\n\n${JSON.stringify(calcData, null, 2)}\n\nPresent this score clearly with a breakdown, then compare to recent draws and give actionable advice.`,
+      };
+
+      await streamFromAI([...messages, completionMsg, systemMsg]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "Sorry, couldn't reach the calculator. Is the backend running?",
+        },
+      ]);
+      setLoading(false);
+    }
+  };
+
+  // Send free text to AI
+  const sendToAI = async (text) => {
+    if (!text.trim() || loading) return;
+    const userMsg = { role: "user", content: text };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
+    await streamFromAI(newMessages);
+  };
+
+  // Stream response from backend
+  const streamFromAI = async (newMessages) => {
     setLoading(true);
     setStreamingText("");
 
@@ -201,8 +275,7 @@ export default function Home() {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-        for (const line of lines) {
+        for (const line of chunk.split("\n")) {
           if (line.startsWith("data: ")) {
             const data = line.slice(6);
             if (data === "[DONE]") break;
@@ -219,8 +292,7 @@ export default function Home() {
 
       setMessages((prev) => [...prev, { role: "assistant", content: full }]);
       setStreamingText("");
-    } catch (err) {
-      // Fallback to non-streaming
+    } catch {
       try {
         const res = await fetch("http://localhost:8000/chat", {
           method: "POST",
@@ -253,6 +325,30 @@ export default function Home() {
     }
   };
 
+  const currentQuestion = getQuestion(currentQuestionId);
+  const isTextQuestion = currentQuestion?.type === "text";
+
+  const handleTextAnswer = (value) => {
+    const question = getQuestion(currentQuestionId);
+    const error = question.validate?.(value);
+    if (error) return;
+    const updatedProfile = { ...profile, [currentQuestionId]: value };
+    setProfile(updatedProfile);
+    setMessages((prev) => [...prev, { role: "user", content: value }]);
+    advanceQuestion(updatedProfile, currentQuestionId);
+  };
+
+  const handleSend = () => {
+    if (!input.trim() || loading) return;
+    if (inCRSFlow && isTextQuestion) {
+      handleTextAnswer(input.trim());
+      setInput("");
+      return;
+    }
+    sendToAI(input);
+    setInput("");
+  };
+  // Render
   return (
     <div
       style={{
@@ -262,7 +358,7 @@ export default function Home() {
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
         background: "var(--color-background)",
       }}>
-      {/* ── Sidebar ── */}
+      {/* Sidebar */}
       <aside
         style={{
           width: "140px",
@@ -274,7 +370,6 @@ export default function Home() {
           overflowY: "auto",
           background: "var(--color-background-secondary)",
         }}>
-        {/* Logo */}
         <div
           style={{
             padding: "0 20px 24px",
@@ -291,138 +386,27 @@ export default function Home() {
             />
             <span
               style={{
-                fontSize: "16px",
+                fontSize: "15px",
                 fontWeight: 600,
                 color: "var(--color-text-primary)",
                 letterSpacing: "-0.3px",
               }}>
-              CanPR.ai
+              PRCompass
             </span>
           </div>
           <p
             style={{
               margin: "6px 0 0",
-              fontSize: "12px",
+              fontSize: "11px",
               color: "var(--color-text-secondary)",
               lineHeight: "1.5",
             }}>
             Canada Express Entry Intelligence
           </p>
         </div>
-
-        {/* Recent Draws */}
-        {/* <div style={{ padding: "20px 20px 0" }}>
-          <p
-            style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--color-text-secondary)",
-              marginBottom: "12px",
-            }}>
-            Recent Draws
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {DUMMY_DRAWS.map((d, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "10px",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "4px",
-                  }}>
-                  <span
-                    style={{
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: "var(--color-text-primary)",
-                    }}>
-                    {d.type}
-                  </span>
-                  <span
-                    style={{ fontSize: "13px", fontWeight: 700, color: RED }}>
-                    {d.crs}
-                  </span>
-                </div>
-                <div
-                  style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--color-text-secondary)",
-                    }}>
-                    {d.date}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: "var(--color-text-secondary)",
-                    }}>
-                    {d.itas.toLocaleString()} ITAs
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div> */}
-
-        {/* Tips */}
-        {/* <div style={{ padding: "20px 20px 0", marginTop: "8px" }}>
-          <p
-            style={{
-              fontSize: "11px",
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--color-text-secondary)",
-              marginBottom: "12px",
-            }}>
-            Quick Tips
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {TIPS.map((tip, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  alignItems: "flex-start",
-                }}>
-                <div
-                  style={{
-                    width: "4px",
-                    height: "4px",
-                    borderRadius: "50%",
-                    background: RED,
-                    marginTop: "7px",
-                    flexShrink: 0,
-                  }}
-                />
-                <p
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--color-text-secondary)",
-                    lineHeight: "1.5",
-                    margin: 0,
-                  }}>
-                  {tip}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div> */}
       </aside>
 
-      {/* ── Chat area ── */}
+      {/* Chat area */}
       <div
         style={{
           flex: 1,
@@ -444,11 +428,11 @@ export default function Home() {
             <p
               style={{
                 margin: 0,
-                fontsize: "16px",
+                fontSize: "15px",
                 fontWeight: 500,
                 color: "var(--color-text-primary)",
               }}>
-              CanPR.ai
+              PRCompass
             </p>
             <p
               style={{
@@ -483,7 +467,7 @@ export default function Home() {
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: "28px 2px",
+            padding: "28px 24px",
             display: "flex",
             flexDirection: "column",
             gap: "20px",
@@ -493,94 +477,51 @@ export default function Home() {
             boxSizing: "border-box",
           }}>
           {messages.map((msg, i) => (
-            <div
+            <ChatMessage
               key={i}
-              style={{
-                display: "flex",
-                justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-              }}>
-              <div
-                style={{
-                  maxWidth: "100%",
-                  padding: "11px 15px",
-                  borderRadius:
-                    msg.role === "user"
-                      ? "18px 18px 4px 18px"
-                      : "4px 18px 18px 18px",
-                  background:
-                    msg.role === "user"
-                      ? "#363535"
-                      : "var(--color-background-secondary)",
-                  color:
-                    msg.role === "user"
-                      ? "#ffffff"
-                      : "var(--color-text-primary)",
-                  fontsize: "16px",
-                  lineHeight: "1.65",
-                }}>
-                {msg.role === "assistant" ? (
-                  <Markdown text={msg.content} />
-                ) : (
-                  msg.content
-                )}
-              </div>
-            </div>
+              msg={msg}
+              isLatest={i === messages.length - 1}
+              isStreaming={false}
+              onOptionSelect={handleOptionSelect}
+              onScoreSubmit={handleScoreSubmit}
+            />
           ))}
 
           {/* Streaming bubble */}
           {streamingText && (
-            <div style={{ display: "flex", justifyContent: "flex-start" }}>
-              <div
-                style={{
-                  maxWidth: "100%",
-                  padding: "11px 15px",
-                  borderRadius: "4px 18px 18px 18px",
-                  background: "var(--color-background-secondary)",
-                  color: "var(--color-text-primary)",
-                  // border: "1px solid rgba(255,255,255,0.06)",
-                }}>
-                <Markdown text={streamingText} />
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: "2px",
-                    height: "14px",
-                    background: RED,
-                    marginLeft: "2px",
-                    verticalAlign: "middle",
-                    animation: "blink 1s step-end infinite",
-                  }}
-                />
-              </div>
-            </div>
+            <ChatMessage
+              msg={{ role: "assistant", content: streamingText }}
+              isLatest={true}
+              isStreaming={true}
+              onOptionSelect={() => {}}
+              onScoreSubmit={() => {}}
+            />
           )}
 
           {/* Loading dots */}
           {loading && !streamingText && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div
-                style={{ display: "flex", gap: "5px", padding: "14px 18px" }}>
-                {[0, 1, 2].map((j) => (
-                  <div
-                    key={j}
-                    style={{
-                      width: "7px",
-                      height: "7px",
-                      borderRadius: "50%",
-                      background: RED,
-                      animation: "bounce 1.2s ease-in-out infinite",
-                      animationDelay: `${j * 0.18}s`,
-                    }}
-                  />
-                ))}
-              </div>
+            <div style={{ display: "flex", gap: "5px", padding: "14px 0" }}>
+              {[0, 1, 2].map((j) => (
+                <div
+                  key={j}
+                  style={{
+                    width: "7px",
+                    height: "7px",
+                    borderRadius: "50%",
+                    background: RED,
+                    animation: "bounce 1.2s ease-in-out infinite",
+                    animationDelay: `${j * 0.18}s`,
+                  }}
+                />
+              ))}
             </div>
           )}
 
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
+        {/* Input — hidden during CRS flow */}
+
         <div
           style={{
             padding: "12px 24px 24px",
@@ -599,28 +540,39 @@ export default function Home() {
               borderRadius: "30px",
               padding: "8px 8px 8px 18px",
               border: "1px solid rgba(255,255,255,0.08)",
+              opacity: inCRSFlow ? 0.4 : 1,
+              transition: "opacity 0.2s",
             }}>
             <input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) =>
-                e.key === "Enter" && !e.shiftKey && sendMessage()
+                e.key === "Enter" && !e.shiftKey && handleSend()
               }
-              placeholder="Ask about your CRS score, draws, or PR strategy..."
+              placeholder={
+                inCRSFlow && !isTextQuestion
+                  ? "Use the buttons above to answer..."
+                  : "Ask about your CRS score, draws, or PR strategy..."
+              }
               style={{
                 flex: 1,
                 background: "transparent",
                 border: "none",
                 outline: "none",
-                fontsize: "16px",
+                fontSize: "15px",
                 color: "var(--color-text-primary)",
                 padding: 0,
+                opacity: inCRSFlow && !isTextQuestion ? 0.4 : 1,
+                cursor: inCRSFlow && !isTextQuestion ? "not-allowed" : "text",
               }}
+              disabled={inCRSFlow && !isTextQuestion}
             />
             <button
-              onClick={sendMessage}
-              disabled={!input.trim() || loading}
+              onClick={handleSend}
+              disabled={
+                !input.trim() || loading || (inCRSFlow && !isTextQuestion)
+              }
               style={{
                 width: "34px",
                 height: "34px",
@@ -628,7 +580,7 @@ export default function Home() {
                 border: "none",
                 background:
                   input.trim() && !loading ? RED : "rgba(255,255,255,0.1)",
-                color: "#ffffff",
+                color: "#fff",
                 cursor: input.trim() && !loading ? "pointer" : "default",
                 display: "flex",
                 alignItems: "center",
@@ -654,14 +606,8 @@ export default function Home() {
 
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        @keyframes pulse {
-          0%, 100% { opacity: 0.3; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${RED}55; border-radius: 4px; }
