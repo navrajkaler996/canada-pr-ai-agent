@@ -28,7 +28,7 @@ def build_system_prompt():
         f"  • {d['date']} | {d['name']} | Min CRS: {d['min_crs']} | ITAs: {d['invitations']}"
         for d in draws
     )
-    return f"""You are PRCompass, a friendly Canada Permanent Residency AI assistant.
+    return f"""You are CanPR.ai, a friendly Canada Permanent Residency AI assistant.
 You help users understand Express Entry, CRS scores, and their chances of receiving an ITA.
 
 TODAY'S DATE: {datetime.now().strftime("%B %d, %Y")}
@@ -41,7 +41,7 @@ GUIDELINES:
 - Always ground advice in the actual draw data above.
 - Never make up draw dates or CRS cutoffs.
 - When unsure, suggest checking IRCC's official website.
-- Refer to yourself as PRCompass, not as a language model.
+- Refer to yourself as CanPR.ai, not as a language model.
 """
 
 async def chat(messages: list[dict]) -> str:
