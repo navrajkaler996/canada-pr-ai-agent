@@ -212,19 +212,56 @@ export default function Home() {
     };
 
     try {
-      // Call real calculator
-      const calcRes = await fetch("http://localhost:8000/calculate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(calcProfile),
-      });
-      const calcData = await calcRes.json();
+      const [calcRes, eligRes] = await Promise.all([
+        fetch("http://localhost:8000/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(calcProfile),
+        }),
+        fetch("http://localhost:8000/eligibility", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...calcProfile,
+            canadian_noc: finalProfile.canadian_noc ?? null,
+            trade_certificate: finalProfile.trade_certificate === true,
+            second_language_test: finalProfile.second_language_test ?? "none",
+          }),
+        }),
+      ]);
 
-      // Send real result to AI to explain
+      const calcData = await calcRes.json();
+      const eligData = await eligRes.json();
+
       const systemMsg = {
         role: "user",
-        content: `The user just completed their CRS profile. Here is their REAL calculated CRS score from the official formula:\n\n${JSON.stringify(calcData, null, 2)}\n\nPresent this score clearly with a breakdown, then compare to recent draws and give actionable advice.`,
+        content: `The user just completed their CRS profile.
+
+        REAL CRS SCORE (calculated using official IRCC formula):
+        ${JSON.stringify(calcData, null, 2)}
+
+        STREAM ELIGIBILITY (already shown to user in a table — do NOT repeat it):
+        ${JSON.stringify(eligData, null, 2)}
+
+        Instructions:
+        1. The CRS score breakdown and stream eligibility are already shown to the user above — do NOT repeat them.
+       `,
       };
+
+      //  2. Compare their score to recent draws — which draws would they have qualified for?
+      //   3. Give 2-3 specific, actionable ways to improve their score or eligibility.
+
+      // Insert eligibility table as a chat message
+      const crsMsg = {
+        role: "assistant",
+        content: `**Your CRS Score: ${calcData.crs.total}**\n\nAge: ${calcData.crs.breakdown.age} pts\nEducation: ${calcData.crs.breakdown.education} pts\nLanguage: ${calcData.crs.breakdown.language} pts\nSecond language: ${calcData.crs.breakdown.second_language} pts\nCanadian work: ${calcData.crs.breakdown.canadian_work} pts\nSpouse factors: ${calcData.crs.breakdown.spouse} pts\nSkill transferability: ${calcData.crs.breakdown.transferability} pts\nAdditional: ${calcData.crs.breakdown.additional} pts`,
+      };
+      const eligMsg = {
+        role: "assistant",
+        type: "eligibility_table",
+        data: eligData,
+      };
+      setMessages((prev) => [...prev, crsMsg, eligMsg]);
 
       await streamFromAI([...messages, completionMsg, systemMsg]);
     } catch {

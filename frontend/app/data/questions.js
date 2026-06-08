@@ -3,21 +3,18 @@
 
 export const CLB_CONVERSION = {
   CELPIP: {
-    // CELPIP score maps 1:1 to CLB (e.g. CELPIP 7 = CLB 7)
     convert: (score) => {
       const n = parseInt(score);
       if (isNaN(n)) return null;
       if (n >= 12) return 12;
       if (n >= 4) return n;
-      return null; // below CLB 4 = not valid
+      return null;
     },
     range: "4–12",
     hint: "e.g. 9",
   },
 
   IELTS: {
-    // IELTS General Training → CLB
-    // Each ability (R/W/L/S) has its own conversion
     convert: (score, ability) => {
       const s = parseFloat(score);
       if (isNaN(s)) return null;
@@ -79,7 +76,6 @@ export const CLB_CONVERSION = {
   },
 
   TEF: {
-    // TEF Canada → NCLC (French equivalent of CLB)
     convert: (score, ability) => {
       const n = parseInt(score);
       if (isNaN(n)) return null;
@@ -133,7 +129,6 @@ export const CLB_CONVERSION = {
   },
 
   TCF: {
-    // TCF Canada → NCLC (French)
     convert: (score, ability) => {
       const n = parseInt(score);
       if (isNaN(n)) return null;
@@ -229,16 +224,8 @@ export const SECOND_LANGUAGE_TEST_OPTIONS = [
   { label: "No second language test", value: "none" },
 ];
 
-// Each question has:
-//   id         — unique key, stored in profile
-//   message    — what the AI "asks"
-//   type       — "options" | "text" | "score_input"
-//   options    — array of { label, value } (for type: options)
-//   inputHint  — placeholder text (for type: text / score_input)
-//   next(profile) — function returning the next question id (branching)
-//   abilities  — for score questions, which abilities to collect
-
 export const QUESTIONS = [
+  // 1. Marital status
   {
     id: "marital_status",
     message:
@@ -258,6 +245,7 @@ export const QUESTIONS = [
     next: () => "age",
   },
 
+  // 2. Age
   {
     id: "age",
     message: "How old are you?",
@@ -272,6 +260,7 @@ export const QUESTIONS = [
     next: () => "education",
   },
 
+  // 3. Education
   {
     id: "education",
     message: "What is your highest level of completed education?",
@@ -283,6 +272,7 @@ export const QUESTIONS = [
         : "first_language_test",
   },
 
+  // 4. Spouse education
   {
     id: "spouse_education",
     message: "What is your spouse or partner's highest level of education?",
@@ -291,6 +281,7 @@ export const QUESTIONS = [
     next: () => "first_language_test",
   },
 
+  // 5. First language test
   {
     id: "first_language_test",
     message:
@@ -303,9 +294,10 @@ export const QUESTIONS = [
         : "first_language_scores",
   },
 
+  // 6. First language scores
   {
     id: "first_language_scores",
-    message: null, // dynamically generated based on test type
+    message: null,
     type: "score_input",
     abilities: ["speaking", "listening", "reading", "writing"],
     next: (profile) =>
@@ -314,6 +306,7 @@ export const QUESTIONS = [
         : "second_language_test",
   },
 
+  // 7. Spouse language test
   {
     id: "spouse_language_test",
     message: "Has your spouse or partner taken an official language test?",
@@ -325,14 +318,16 @@ export const QUESTIONS = [
         : "spouse_language_scores",
   },
 
+  // 8. Spouse language scores
   {
     id: "spouse_language_scores",
-    message: null, // dynamically generated
+    message: null,
     type: "score_input",
     abilities: ["speaking", "listening", "reading", "writing"],
     next: () => "second_language_test",
   },
 
+  // 9. Second language test
   {
     id: "second_language_test",
     message:
@@ -345,29 +340,48 @@ export const QUESTIONS = [
         : "second_language_scores",
   },
 
-  // ── 10. Second language scores ───────────────────────────────────────────
+  // 10. Second language scores
   {
     id: "second_language_scores",
-    message: null, // dynamically generated
+    message: null,
     type: "score_input",
     abilities: ["speaking", "listening", "reading", "writing"],
     next: () => "canadian_experience",
   },
 
-  // ── 11. Canadian work experience ─────────────────────────────────────────
+  // 11. Canadian work experience
   {
     id: "canadian_experience",
     message:
       "How many years of skilled Canadian work experience do you have in the last 10 years?",
     type: "options",
     options: CANADIAN_EXPERIENCE_OPTIONS,
+    next: (profile) => {
+      if (profile.canadian_experience > 0) return "canadian_noc";
+      return profile.marital_status === "married_accompanying"
+        ? "spouse_canadian_experience"
+        : "foreign_experience";
+    },
+  },
+
+  // 12. Canadian NOC level (only if canadian_experience > 0)
+  {
+    id: "canadian_noc",
+    message: "What is the skill level of your Canadian job(s)?",
+    type: "options",
+    options: [
+      { label: "NOC 0 — Manager / executive", value: "0" },
+      { label: "NOC A — Professional (needs a degree)", value: "A" },
+      { label: "NOC B — Technical / skilled trade", value: "B" },
+      { label: "NOC C or D — Semi or low-skilled", value: "CD" },
+    ],
     next: (profile) =>
       profile.marital_status === "married_accompanying"
         ? "spouse_canadian_experience"
         : "foreign_experience",
   },
 
-  // ── 12. Spouse Canadian work experience ──────────────────────────────────
+  // 13. Spouse Canadian work experience
   {
     id: "spouse_canadian_experience",
     message:
@@ -377,17 +391,29 @@ export const QUESTIONS = [
     next: () => "foreign_experience",
   },
 
-  // ── 13. Foreign work experience ──────────────────────────────────────────
+  // 14. Foreign work experience
   {
     id: "foreign_experience",
     message:
       "How many years of skilled foreign work experience do you have in the last 10 years?",
     type: "options",
     options: FOREIGN_EXPERIENCE_OPTIONS,
+    next: () => "trade_certificate",
+  },
+
+  // 15. Trade certificate
+  {
+    id: "trade_certificate",
+    message: "Do you have a valid trade certificate (Red Seal or provincial)?",
+    type: "options",
+    options: [
+      { label: "Yes", value: true },
+      { label: "No", value: false },
+    ],
     next: () => "canadian_education",
   },
 
-  // ── 14. Canadian education ───────────────────────────────────────────────
+  // 16. Canadian education
   {
     id: "canadian_education",
     message: "Did you complete any post-secondary education in Canada?",
@@ -400,7 +426,7 @@ export const QUESTIONS = [
     next: () => "sibling_in_canada",
   },
 
-  // ── 15. Sibling in Canada ────────────────────────────────────────────────
+  // 17. Sibling in Canada
   {
     id: "sibling_in_canada",
     message:
@@ -413,6 +439,7 @@ export const QUESTIONS = [
     next: () => "provincial_nomination",
   },
 
+  // 18. Provincial nomination
   {
     id: "provincial_nomination",
     message: "Have you received a provincial nomination (PNP)?",
@@ -421,21 +448,18 @@ export const QUESTIONS = [
       { label: "Yes", value: true },
       { label: "No", value: false },
     ],
-    next: () => null, // null = end of flow, trigger calculation
+    next: () => null,
   },
 ];
 
-// get question by id
 export function getQuestion(id) {
   return QUESTIONS.find((q) => q.id === id) ?? null;
 }
 
-//get the first question id
 export function getFirstQuestionId() {
   return QUESTIONS[0].id;
 }
 
-//generate dynamic message for score input questions
 export function getScoreMessage(questionId, profile) {
   const testKey =
     questionId === "first_language_scores"
@@ -452,13 +476,10 @@ export function getScoreMessage(questionId, profile) {
   const testInfo = CLB_CONVERSION[test];
   const label =
     questionId === "spouse_language_scores" ? "your spouse's" : "your";
-
   return `Enter ${label} ${test} scores for each ability. (${testInfo?.range ?? ""})`;
 }
 
-// convert raw scores to CLB for a full set of abilities
 export function convertScoresToCLB(test, scores) {
-  // scores = { speaking, listening, reading, writing }
   const converter = CLB_CONVERSION[test];
   if (!converter) return null;
 
@@ -473,11 +494,9 @@ export function convertScoresToCLB(test, scores) {
     if (result === null) return null;
     clb[ability] = result;
   }
-  return clb; // { speaking: 9, listening: 10, reading: 9, writing: 9 }
+  return clb;
 }
 
-//check if all questions are complete
 export function isFlowComplete(profile) {
-  const last = getQuestion("provincial_nomination");
   return profile.provincial_nomination !== undefined;
 }

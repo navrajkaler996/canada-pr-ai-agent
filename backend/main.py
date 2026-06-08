@@ -4,7 +4,7 @@ from crs_calculator import calculate_crs
 from ita_estimator import get_ita_likelihood
 from fastapi.responses import StreamingResponse
 from ai_agent import chat, chat_stream
-
+from eligibility_checker import check_eligibility
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -42,6 +42,9 @@ class Profile(BaseModel):
     spouse_clb_reading: int = None
     spouse_clb_writing: int = None
     spouse_canadian_work_years: int = None
+    canadian_noc: str = None
+    trade_certificate: bool = False
+    second_language_test: str = "none"
 
 @app.get("/")
 def root():
@@ -55,6 +58,11 @@ def calculate(profile: Profile):
         "crs": crs_result,
         "ita_likelihood": ita_result
     }
+
+
+@app.post("/eligibility")
+def eligibility(profile: Profile):
+    return check_eligibility(profile.dict())
 
 @app.get("/draws/latest")
 def latest_draw():

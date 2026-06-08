@@ -38,7 +38,9 @@ function renderInline(text) {
 
 // Block markdown renderer
 function Markdown({ text }) {
+  if (!text) return null;
   const lines = text.split("\n");
+
   const elements = [];
   let i = 0;
 
@@ -258,6 +260,68 @@ function ScoreInput({ abilities, hint, onSubmit }) {
   );
 }
 
+function EligibilityTable({ data }) {
+  const rows = [
+    { key: "CEC", label: "Canadian Experience Class" },
+    { key: "FST", label: "Federal Skilled Trades" },
+    { key: "French", label: "French-Language Category" },
+  ];
+
+  return (
+    <div
+      style={{
+        borderRadius: "12px",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,0.08)",
+        fontSize: "14px",
+      }}>
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "rgba(255,255,255,0.05)",
+          fontWeight: 600,
+          fontSize: "13px",
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          color: "var(--color-text-secondary)",
+        }}>
+        Stream Eligibility
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <tbody>
+          {rows.map(({ key, label }) => {
+            const stream = data[key];
+            if (!stream) return null;
+            return (
+              <tr
+                key={key}
+                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    fontWeight: 500,
+                    whiteSpace: "nowrap",
+                    color: "var(--color-text-primary)",
+                  }}>
+                  {stream.eligible ? "✅" : "❌"} {label}
+                </td>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    color: "var(--color-text-secondary)",
+                    fontSize: "13px",
+                  }}>
+                  {stream.reasons[0]}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ChatMessage component
 // Props:
 //   msg          — { role, content, options, scoreInput, showQuickReplies }
@@ -274,6 +338,17 @@ export default function ChatMessage({
   isLatest,
 }) {
   const isUser = msg.role === "user";
+
+  // Handle eligibility table before anything else
+  if (msg.type === "eligibility_table") {
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-start" }}>
+        <div style={{ maxWidth: "85%" }}>
+          <EligibilityTable data={msg.data} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
