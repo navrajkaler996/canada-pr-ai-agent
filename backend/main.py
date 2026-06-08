@@ -7,6 +7,8 @@ from ai_agent import chat, chat_stream
 from eligibility_checker import check_eligibility
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
+import psycopg2
+from datetime import date, timedelta
 
 
 app = FastAPI()
@@ -111,3 +113,91 @@ async def chat_stream_endpoint(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class DrawCompareRequest(BaseModel):
+    crs_score: int
+    eligible_streams: list[str]  # e.g. ["CEC", "FSW", "FST", "French"]
+
+@app.post("/draws/compare")
+def draws_compare(req: DrawCompareRequest):
+    import psycopg2
+    from datetime import date, timedelta
+
+    conn = psycopg2.connect(
+        dbname="canada_pr",
+        user="navrajkaler",
+        host="localhost",
+        port="5432"
+    )
+    cur = conn.cursor()
+
+    two_years_ago = date.today() - timedelta(days=730)
+    results = {}
+
+    stream_map = {
+    "CEC":    "Canadian Experience Class",
+    "FSW":    "Federal Skilled Worker",
+    "FST":    "Federal Skilled Trades",
+    "French": "French%",         
+    "PNP":    "Provincial Nominee Program",
+    "General": "General",
+}
+    for stream in req.eligible_streams:
+        pattern = stream_map.get(stream)
+        if not pattern:
+            continue
+
+        # Use ILIKE only for French (two name variants), exact match for rest
+        if stream == "French":
+            cur.execute("""
+                SELECT draw_crs, draw_date
+                FROM draws
+                WHERE draw_name ILIKE %s
+                AND draw_date >= %s
+                ORDER BY draw_date DESC
+            """, (pattern, two_years_ago))
+        else:
+            cur.execute("""
+                SELECT draw_crs, draw_date
+                FROM draws
+                WHERE draw_name = %s
+                AND draw_date >= %s
+                ORDER BY draw_date DESC
+            """, (pattern, two_years_ago))
+            pattern = stream_map.get(stream)
+            if not pattern:
+                continue
+
+            cur.execute("""
+                SELECT draw_crs, draw_date
+                FROM draws
+                WHERE draw_name ILIKE %s
+                AND draw_date >= %s
+                ORDER BY draw_date DESC
+            """, (pattern, two_years_ago))
+
+            rows = cur.fetchall()
+
+            if not rows:
+                results[stream] = {"error": "no draws found"}
+                continue
+
+        cutoffs = [r[0] for r in rows]
+        last_draw = rows[0]
+
+        qualifying = [c for c in cutoffs if req.crs_score >= c]
+
+        results[stream] = {
+            "total_draws": len(cutoffs),
+            "qualifying_draws": len(qualifying),
+            "percentage": round(len(qualifying) / len(cutoffs) * 100, 1),
+            "lowest_cutoff": min(cutoffs),
+            "highest_cutoff": max(cutoffs),
+            "last_draw_date": str(last_draw[1]),
+            "last_draw_cutoff": last_draw[0],
+        }
+
+    cur.close()
+    conn.close()
+    return results

@@ -323,6 +323,111 @@ function EligibilityTable({ data }) {
   );
 }
 
+function DrawComparisonCard({ data }) {
+  const rows = [
+    { key: "CEC", label: "Canadian Experience Class" },
+    { key: "FST", label: "Federal Skilled Trades" },
+    { key: "French", label: "French-Language Category" },
+    { key: "FSW", label: "Federal Skilled Worker" },
+  ];
+
+  return (
+    <div
+      style={{
+        borderRadius: "12px",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,0.08)",
+        fontSize: "14px",
+        marginTop: "8px",
+      }}>
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "rgba(255,255,255,0.05)",
+          fontWeight: 600,
+          fontSize: "13px",
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          color: "var(--color-text-secondary)",
+        }}>
+        Draw History (Last 2 Years)
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            {["Stream", "Qualifying", "Cutoff Range", "Last Draw"].map((h) => (
+              <th
+                key={h}
+                style={{
+                  padding: "8px 14px",
+                  textAlign: "left",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  color: "var(--color-text-secondary)",
+                }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ key, label }) => {
+            const s = data[key];
+            if (!s || s.error) return null;
+            const qualifyPct = s.percentage;
+            const color =
+              qualifyPct >= 50 ? "#4CAF50" : qualifyPct >= 25 ? "#FF9800" : RED;
+            return (
+              <tr
+                key={key}
+                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}>
+                  {label}
+                </td>
+                <td style={{ padding: "10px 14px" }}>
+                  <span style={{ color, fontWeight: 600 }}>
+                    {s.qualifying_draws}/{s.total_draws}
+                  </span>
+                  <span
+                    style={{
+                      color: "var(--color-text-secondary)",
+                      fontSize: "12px",
+                      marginLeft: "4px",
+                    }}>
+                    ({qualifyPct}%)
+                  </span>
+                </td>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    color: "var(--color-text-secondary)",
+                    fontSize: "13px",
+                  }}>
+                  {s.lowest_cutoff} – {s.highest_cutoff}
+                </td>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    color: "var(--color-text-secondary)",
+                    fontSize: "13px",
+                  }}>
+                  {s.last_draw_cutoff}{" "}
+                  <span style={{ fontSize: "11px" }}>({s.last_draw_date})</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ChatMessage component
 // Props:
 //   msg          — { role, content, options, scoreInput, showQuickReplies }
@@ -340,12 +445,22 @@ export default function ChatMessage({
 }) {
   const isUser = msg.role === "user";
 
-  // Handle eligibility table before anything else
+  // Handle eligibility table
   if (msg.type === "eligibility_table") {
     return (
       <div style={{ display: "flex", justifyContent: "flex-start" }}>
         <div style={{ maxWidth: "85%" }}>
           <EligibilityTable data={msg.data} />
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.type === "draws_card") {
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-start" }}>
+        <div style={{ maxWidth: "90%" }}>
+          <DrawComparisonCard data={msg.data} />
         </div>
       </div>
     );

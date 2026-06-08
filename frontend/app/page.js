@@ -234,6 +234,20 @@ export default function Home() {
 
       const calcData = await calcRes.json();
       const eligData = await eligRes.json();
+      const eligibleStreams = Object.entries(eligData)
+        .filter(([_, v]) => v.eligible)
+        .map(([k]) => k);
+
+      const drawsRes = await fetch("http://localhost:8000/draws/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          crs_score: calcData.crs.total,
+          eligible_streams: eligibleStreams,
+        }),
+      });
+
+      const drawsData = await drawsRes.json();
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -247,8 +261,13 @@ export default function Home() {
         STREAM ELIGIBILITY (already shown to user in a table — do NOT repeat it):
         ${JSON.stringify(eligData, null, 2)}
 
+        DRAW COMPARISON (already shown to user in a card — do NOT repeat raw numbers):
+        ${JSON.stringify(drawsData, null, 2)}
+
         Instructions:
-        1. The CRS score breakdown and stream eligibility are already shown to the user above — do NOT repeat them.
+        1. The CRS score breakdown and stream eligibility are already shown to the user — do NOT repeat them.
+        2. The draw comparison table is already shown. Write a short 2-3 sentence paragraph interpreting what it means for the user. Be honest but encouraging — if their qualifying % is low, acknowledge it but frame it constructively. Do NOT list numbers, just explain what it means in plain language.
+        3. Do NOT give score improvement tips yet.
        `,
       };
 
@@ -266,8 +285,14 @@ export default function Home() {
         data: eligData,
       };
 
+      const drawsMsg = {
+        role: "assistant",
+        type: "draws_card",
+        data: drawsData,
+      };
+
       console.log("---", eligData);
-      setMessages((prev) => [...prev, crsMsg, eligMsg]);
+      setMessages((prev) => [...prev, crsMsg, eligMsg, drawsMsg]);
 
       await streamFromAI([...messages, completionMsg, systemMsg]);
     } catch {
