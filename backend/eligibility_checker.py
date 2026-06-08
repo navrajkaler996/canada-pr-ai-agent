@@ -1,6 +1,8 @@
 # eligibility_checker.py
 # Checks which Express Entry streams a user is eligible for.
-# Returns facts — no guessing, no AI involvement.
+# Returns facts - no AI
+
+from fsw_calculator import calculate_fsw
 
 def check_cec(profile):
     """
@@ -163,10 +165,10 @@ def check_french_category(profile):
 def check_eligibility(profile):
     """
     Run all eligibility checks and return results.
-    FSW is not included yet — requires separate FSW grid calculation.
     """
     return {
         "CEC":    check_cec(profile),
         "FST":    check_fst(profile),
         "French": check_french_category(profile),
+        "FSW":    calculate_fsw(profile),
     }

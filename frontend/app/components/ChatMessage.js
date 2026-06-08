@@ -265,6 +265,7 @@ function EligibilityTable({ data }) {
     { key: "CEC", label: "Canadian Experience Class" },
     { key: "FST", label: "Federal Skilled Trades" },
     { key: "French", label: "French-Language Category" },
+    { key: "FSW", label: "Federal Skilled Worker" },
   ];
 
   return (

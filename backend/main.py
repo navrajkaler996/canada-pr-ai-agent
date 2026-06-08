@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from ai_agent import chat, chat_stream
 from eligibility_checker import check_eligibility
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 
 
 app = FastAPI()
@@ -36,15 +37,17 @@ class Profile(BaseModel):
     canadian_education_years: int = 0
     has_provincial_nomination: bool = False
     has_certificate: bool = False
-    spouse_education: str = None
+    spouse_education: Optional[str] = None
     spouse_clb_speaking: int = None
     spouse_clb_listening: int = None
     spouse_clb_reading: int = None
     spouse_clb_writing: int = None
     spouse_canadian_work_years: int = None
-    canadian_noc: str = None
+    canadian_noc: Optional[str] = None
     trade_certificate: bool = False
     second_language_test: str = "none"
+    foreign_noc: Optional[str] = None
+    job_offer: bool = False
 
 @app.get("/")
 def root():

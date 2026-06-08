@@ -398,10 +398,27 @@ export const QUESTIONS = [
       "How many years of skilled foreign work experience do you have in the last 10 years?",
     type: "options",
     options: FOREIGN_EXPERIENCE_OPTIONS,
+    next: (profile) => {
+      if (profile.foreign_experience > 0) return "foreign_noc";
+      return "trade_certificate";
+    },
+  },
+
+  // 15. Foreign work noc
+  {
+    id: "foreign_noc",
+    message: "What is the skill level of your foreign job(s)?",
+    type: "options",
+    options: [
+      { label: "NOC 0 — Manager / executive", value: "0" },
+      { label: "NOC A — Professional (needs a degree)", value: "A" },
+      { label: "NOC B — Technical / skilled trade", value: "B" },
+      { label: "NOC C or D — Semi or low-skilled", value: "CD" },
+    ],
     next: () => "trade_certificate",
   },
 
-  // 15. Trade certificate
+  // 16. Trade certificate
   {
     id: "trade_certificate",
     message: "Do you have a valid trade certificate (Red Seal or provincial)?",
@@ -413,7 +430,7 @@ export const QUESTIONS = [
     next: () => "canadian_education",
   },
 
-  // 16. Canadian education
+  // 17. Canadian education
   {
     id: "canadian_education",
     message: "Did you complete any post-secondary education in Canada?",
@@ -426,7 +443,7 @@ export const QUESTIONS = [
     next: () => "sibling_in_canada",
   },
 
-  // 17. Sibling in Canada
+  // 18. Sibling in Canada
   {
     id: "sibling_in_canada",
     message:
@@ -436,10 +453,22 @@ export const QUESTIONS = [
       { label: "Yes", value: true },
       { label: "No", value: false },
     ],
+    next: () => "job_offer",
+  },
+
+  // 19. Job offer
+  {
+    id: "job_offer",
+    message: "Do you have a valid job offer from a Canadian employer?",
+    type: "options",
+    options: [
+      { label: "Yes", value: true },
+      { label: "No", value: false },
+    ],
     next: () => "provincial_nomination",
   },
 
-  // 18. Provincial nomination
+  // 20. Provincial nomination
   {
     id: "provincial_nomination",
     message: "Have you received a provincial nomination (PNP)?",

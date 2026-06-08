@@ -51,7 +51,7 @@ export default function Home() {
   const WELCOME = {
     role: "assistant",
     content:
-      "Hi! I'm **CarPR.ai** — your Canadian Express Entry guide.\n\nI can calculate your CRS score, analyze recent draws, and tell you exactly where you stand. What would you like to do?",
+      "Hi! I'm **CanPR.ai** — your Canadian Express Entry guide.\n\nI can calculate your CRS score, analyze recent draws, and tell you exactly where you stand. What would you like to do?",
     showQuickReplies: true,
     options: [
       { label: "Calculate my CRS", value: "calculate_crs" },
@@ -226,12 +226,16 @@ export default function Home() {
             canadian_noc: finalProfile.canadian_noc ?? null,
             trade_certificate: finalProfile.trade_certificate === true,
             second_language_test: finalProfile.second_language_test ?? "none",
+            canadian_noc: finalProfile.canadian_noc ?? "",
+            foreign_noc: finalProfile.foreign_noc ?? "",
           }),
         }),
       ]);
 
       const calcData = await calcRes.json();
       const eligData = await eligRes.json();
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       const systemMsg = {
         role: "user",
@@ -261,6 +265,8 @@ export default function Home() {
         type: "eligibility_table",
         data: eligData,
       };
+
+      console.log("---", eligData);
       setMessages((prev) => [...prev, crsMsg, eligMsg]);
 
       await streamFromAI([...messages, completionMsg, systemMsg]);
@@ -428,7 +434,7 @@ export default function Home() {
                 color: "var(--color-text-primary)",
                 letterSpacing: "-0.3px",
               }}>
-              CarPR.ai
+              CanPR.ai
             </span>
           </div>
           <p
@@ -469,7 +475,7 @@ export default function Home() {
                 fontWeight: 500,
                 color: "var(--color-text-primary)",
               }}>
-              CarPR.ai
+              CanPR.ai
             </p>
             <p
               style={{
