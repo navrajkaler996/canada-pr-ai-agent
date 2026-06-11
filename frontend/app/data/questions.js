@@ -225,6 +225,36 @@ export const SECOND_LANGUAGE_TEST_OPTIONS = [
 ];
 
 export const QUESTIONS = [
+  // 0. Current location / immigration status
+  {
+    id: "immigration_status",
+    message: "Let's start! Are you currently in Canada or outside Canada?",
+    type: "options",
+    options: [
+      { label: "I'm outside Canada", value: "outside_canada" },
+      { label: "I'm in Canada on a study permit", value: "study_permit" },
+      { label: "I'm in Canada on a work permit / PGWP", value: "work_permit" },
+      { label: "I'm in Canada with other status", value: "other" },
+    ],
+    next: (profile) =>
+      profile.immigration_status === "work_permit"
+        ? "work_permit_expiry"
+        : "marital_status",
+  },
+
+  // 0b. Work permit expiry (only if on work permit)
+  {
+    id: "work_permit_expiry",
+    message: "How many months do you have left on your work permit?",
+    type: "options",
+    options: [
+      { label: "Less than 6 months", value: "less_than_6" },
+      { label: "6–12 months", value: "6_to_12" },
+      { label: "1–2 years", value: "1_to_2_years" },
+      { label: "2+ years", value: "2_plus_years" },
+    ],
+    next: () => "marital_status",
+  },
   // 1. Marital status
   {
     id: "marital_status",
@@ -264,6 +294,10 @@ export const QUESTIONS = [
   {
     id: "education",
     message: "What is your highest level of completed education?",
+    note: (profile) =>
+      profile.immigration_status === "study_permit"
+        ? "Do not include the studies you are currently enrolled in."
+        : null,
     type: "options",
     options: EDUCATION_OPTIONS,
     next: (profile) =>
@@ -354,6 +388,10 @@ export const QUESTIONS = [
     id: "canadian_experience",
     message:
       "How many years of skilled Canadian work experience do you have in the last 10 years?",
+    note: (profile) =>
+      profile.immigration_status === "study_permit"
+        ? "Only count full-time skilled work (NOC 0, A, or B). Co-op placements and part-time work do not qualify. If you are still studying, select None."
+        : null,
     type: "options",
     options: CANADIAN_EXPERIENCE_OPTIONS,
     next: (profile) => {
@@ -434,11 +472,37 @@ export const QUESTIONS = [
   {
     id: "canadian_education",
     message: "Did you complete any post-secondary education in Canada?",
+    note: (profile) =>
+      profile.immigration_status === "study_permit"
+        ? "Only count completed Canadian degrees or diplomas. Do not include studies currently in progress."
+        : null,
     type: "options",
     options: [
       { label: "No", value: "none" },
       { label: "1–2 years", value: "one_two_years" },
       { label: "3+ years", value: "three_plus_years" },
+    ],
+    next: (profile) =>
+      profile.immigration_status === "study_permit"
+        ? "current_canadian_study"
+        : "sibling_in_canada",
+  },
+
+  // 17b. Current Canadian study (only for User B)
+  {
+    id: "current_canadian_study",
+    message: "What program are you currently studying in Canada?",
+    note: () =>
+      "This helps us calculate your projected CRS score after graduation.",
+    type: "options",
+    options: [
+      {
+        label: "1–2 year college diploma or graduate certificate",
+        value: "one_two_years",
+      },
+      { label: "3–4 year bachelor's degree", value: "three_plus_years" },
+      { label: "Master's degree", value: "masters" },
+      { label: "PhD", value: "phd" },
     ],
     next: () => "sibling_in_canada",
   },
@@ -486,7 +550,7 @@ export function getQuestion(id) {
 }
 
 export function getFirstQuestionId() {
-  return QUESTIONS[0].id;
+  return "immigration_status";
 }
 
 export function getScoreMessage(questionId, profile) {

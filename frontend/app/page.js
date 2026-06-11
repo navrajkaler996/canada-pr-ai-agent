@@ -16,9 +16,18 @@ const RED = "#CC0000";
 // Build a message object from a question
 function messageFromQuestion(question, profile) {
   const base = { role: "assistant", questionId: question.id };
+  const note =
+    typeof question.note === "function"
+      ? question.note(profile)
+      : (question.note ?? null);
 
   if (question.type === "options") {
-    return { ...base, content: question.message, options: question.options };
+    return {
+      ...base,
+      content: question.message,
+      options: question.options,
+      note,
+    };
   }
 
   if (question.type === "score_input") {
@@ -37,11 +46,12 @@ function messageFromQuestion(question, profile) {
       ...base,
       content: getScoreMessage(question.id, profile),
       scoreInput: { abilities: question.abilities, hint },
+      note,
     };
   }
 
   // type: "text"
-  return { ...base, content: question.message, options: null };
+  return { ...base, content: question.message, options: null, note };
 }
 
 export default function Home() {
@@ -90,11 +100,11 @@ export default function Home() {
     const nextQuestion = getQuestion(nextId);
     if (!nextQuestion) return;
 
+    const msg = messageFromQuestion(nextQuestion, updatedProfile);
+    console.log("msg being pushed:", msg);
+
     setCurrentQuestionId(nextId);
-    setMessages((prev) => [
-      ...prev,
-      messageFromQuestion(nextQuestion, updatedProfile),
-    ]);
+    setMessages((prev) => [...prev, msg]);
   };
 
   // Handle option button tap
@@ -154,7 +164,35 @@ export default function Home() {
     setMessages((prev) => [...prev, firstMsg]);
   };
 
+  //helpers for finishCRSFlow
+  const EDUCATION_RANK = {
+    less_than_high_school: 0,
+    high_school: 1,
+    one_year: 2,
+    two_year: 3,
+    bachelors: 4,
+    two_or_more: 5,
+    masters: 6,
+    phd: 7,
+  };
+
+  const STUDY_TO_EDUCATION = {
+    one_two_years: "two_year",
+    three_plus_years: "bachelors",
+    masters: "masters",
+    phd: "phd",
+  };
+
+  const getHigherEducation = (current, canadianStudy) => {
+    const canadianDegree = STUDY_TO_EDUCATION[canadianStudy];
+    if (!canadianDegree) return current;
+    return EDUCATION_RANK[canadianDegree] > EDUCATION_RANK[current]
+      ? canadianDegree
+      : current;
+  };
+
   // Finish CRS flow — send profile to AI
+
   const finishCRSFlow = async (finalProfile) => {
     setInCRSFlow(false);
     setCurrentQuestionId(null);
@@ -163,7 +201,6 @@ export default function Home() {
     setMessages((prev) => [...prev, completionMsg]);
     setLoading(true);
 
-    // Map frontend profile → crs_calculator.py format
     const hasSpouse = finalProfile.marital_status === "married_accompanying";
     const firstCLB = finalProfile.first_language_scores_clb ?? {};
     const secondCLB = finalProfile.second_language_scores_clb ?? null;
@@ -212,7 +249,33 @@ export default function Home() {
     };
 
     try {
-      const [calcRes, eligRes] = await Promise.all([
+      const isStudyPermit = finalProfile.immigration_status === "study_permit";
+
+      const projectedCanadianEducationYears =
+        finalProfile.current_canadian_study === "one_two_years"
+          ? 1
+          : finalProfile.current_canadian_study === "three_plus_years"
+            ? 3
+            : finalProfile.current_canadian_study === "masters"
+              ? 3
+              : finalProfile.current_canadian_study === "phd"
+                ? 3
+                : 0;
+
+      const projectedProfile = isStudyPermit
+        ? {
+            ...calcProfile,
+            canadian_work_years: 1,
+            canadian_noc: "A",
+            canadian_education_years: projectedCanadianEducationYears,
+            education: getHigherEducation(
+              calcProfile.education,
+              finalProfile.current_canadian_study,
+            ),
+          }
+        : null;
+
+      const baseRequests = [
         fetch("http://localhost:8000/calculate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -223,62 +286,148 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...calcProfile,
-            canadian_noc: finalProfile.canadian_noc ?? null,
+            canadian_noc: finalProfile.canadian_noc ?? "",
             trade_certificate: finalProfile.trade_certificate === true,
             second_language_test: finalProfile.second_language_test ?? "none",
-            canadian_noc: finalProfile.canadian_noc ?? "",
             foreign_noc: finalProfile.foreign_noc ?? "",
           }),
         }),
-      ]);
+        fetch("http://localhost:8000/score/simulate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(calcProfile),
+        }),
+        ...(isStudyPermit
+          ? [
+              // responses[3] — projected calculate
+              fetch("http://localhost:8000/calculate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(projectedProfile),
+              }),
+              // responses[4] — projected eligibility
+              fetch("http://localhost:8000/eligibility", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  ...projectedProfile,
+                  canadian_noc: "A",
+                  trade_certificate: finalProfile.trade_certificate === true,
+                  second_language_test:
+                    finalProfile.second_language_test ?? "none",
+                  foreign_noc: finalProfile.foreign_noc ?? "",
+                }),
+              }),
+              // responses[5] — projected simulate
+              fetch("http://localhost:8000/score/simulate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(projectedProfile),
+              }),
+            ]
+          : []),
+      ];
 
-      const calcData = await calcRes.json();
-      const eligData = await eligRes.json();
+      const responses = await Promise.all(baseRequests);
+      const calcData = await responses[0].json();
+      const eligData = await responses[1].json();
+      const simData = await responses[2].json();
+      const projectedCalcData = isStudyPermit
+        ? await responses[3].json()
+        : null;
+      const projectedEligData = isStudyPermit
+        ? await responses[4].json()
+        : null;
+      const projectedSimData = isStudyPermit ? await responses[5].json() : null;
+
       const eligibleStreams = Object.entries(eligData)
         .filter(([_, v]) => v.eligible)
         .map(([k]) => k);
 
-      const drawsRes = await fetch("http://localhost:8000/draws/compare", {
+      const projectedEligibleStreams = isStudyPermit ? ["CEC"] : [];
+
+      const drawsRequests = [
+        fetch("http://localhost:8000/draws/compare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            crs_score: calcData.crs.total,
+            eligible_streams:
+              eligibleStreams.length > 0 ? eligibleStreams : ["FSW"],
+          }),
+        }),
+        ...(isStudyPermit
+          ? [
+              fetch("http://localhost:8000/draws/compare", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  crs_score: projectedCalcData.crs.total,
+                  eligible_streams: projectedEligibleStreams,
+                }),
+              }),
+            ]
+          : []),
+      ];
+
+      const drawsResponses = await Promise.all(drawsRequests);
+      const drawsData = await drawsResponses[0].json();
+      const projectedDrawsData = isStudyPermit
+        ? await drawsResponses[1].json()
+        : null;
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      const adviceRes = await fetch("http://localhost:8000/advice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          crs_score: calcData.crs.total,
-          eligible_streams: eligibleStreams,
+          immigration_status: finalProfile.immigration_status,
+          work_permit_expiry: finalProfile.work_permit_expiry ?? null,
+          eligibility: isStudyPermit ? projectedEligData : eligData,
+          draws: isStudyPermit ? projectedDrawsData : drawsData,
+          simulations: isStudyPermit ? projectedSimData : simData,
+          crs_score: isStudyPermit
+            ? projectedCalcData.crs.total
+            : calcData.crs.total,
         }),
       });
 
-      const drawsData = await drawsRes.json();
-
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const adviceData = await adviceRes.json();
 
       const systemMsg = {
         role: "user",
         content: `The user just completed their CRS profile.
 
-        REAL CRS SCORE (calculated using official IRCC formula):
-        ${JSON.stringify(calcData, null, 2)}
+STRUCTURED ADVICE (generated by rules engine — this is the ONLY source of truth):
+${JSON.stringify(adviceData, null, 2)}
 
-        STREAM ELIGIBILITY (already shown to user in a table — do NOT repeat it):
-        ${JSON.stringify(eligData, null, 2)}
+${
+  isStudyPermit
+    ? `USER CONTEXT: This user is on a study permit.
+     Current CRS (today, no work experience): ${calcData.crs.total}
+     Projected CRS (after graduation + 1 year NOC A work): ${projectedCalcData.crs.total}
+     All cards shown to user are based on projected score — do NOT mention current score.`
+    : ""
+}
 
-        DRAW COMPARISON (already shown to user in a card — do NOT repeat raw numbers):
-        ${JSON.stringify(drawsData, null, 2)}
-
-        Instructions:
-        1. The CRS score breakdown and stream eligibility are already shown to the user — do NOT repeat them.
-        2. The draw comparison table is already shown. Write a short 2-3 sentence paragraph interpreting what it means for the user. Be honest but encouraging — if their qualifying % is low, acknowledge it but frame it constructively. Do NOT list numbers, just explain what it means in plain language.
-        3. Do NOT give score improvement tips yet.
-       `,
+Instructions:
+1. Everything is already shown to the user in cards — do NOT repeat any numbers or tables.
+2. Do NOT start with "Based on your profile" or "here's a summary".
+3. Start with the warning — state it word for word, do not rephrase or soften it.
+4. Then write the stream_summaries as 1-2 natural sentences.
+5. For each top_improvement say exactly: "[description] would add [delta] points, bringing your score to [new_score]."
+6. End with the follow_up_question exactly as written — do not modify it.
+7. CEC means Canadian Experience Class — never expand or rephrase this acronym.
+8. Do NOT add anything not in the structured advice above. No likelihood percentages, no extra warnings, no extra improvements.
+`,
       };
 
-      //  2. Compare their score to recent draws — which draws would they have qualified for?
-      //   3. Give 2-3 specific, actionable ways to improve their score or eligibility.
-
-      // Insert eligibility table as a chat message
       const crsMsg = {
         role: "assistant",
         content: `**Your CRS Score: ${calcData.crs.total}**\n\nAge: ${calcData.crs.breakdown.age} pts\nEducation: ${calcData.crs.breakdown.education} pts\nLanguage: ${calcData.crs.breakdown.language} pts\nSecond language: ${calcData.crs.breakdown.second_language} pts\nCanadian work: ${calcData.crs.breakdown.canadian_work} pts\nSpouse factors: ${calcData.crs.breakdown.spouse} pts\nSkill transferability: ${calcData.crs.breakdown.transferability} pts\nAdditional: ${calcData.crs.breakdown.additional} pts`,
       };
+
       const eligMsg = {
         role: "assistant",
         type: "eligibility_table",
@@ -291,18 +440,42 @@ export default function Home() {
         data: drawsData,
       };
 
-      console.log("---", eligData);
-      setMessages((prev) => [...prev, crsMsg, eligMsg, drawsMsg]);
+      const projectedDrawsMsg = isStudyPermit
+        ? {
+            role: "assistant",
+            type: "draws_card",
+            label: `Projected Score after graduation + 1 year NOC A work: ${projectedCalcData.crs.total}`,
+            data: projectedDrawsData,
+          }
+        : null;
+
+      const projectedEligMsg = isStudyPermit
+        ? {
+            role: "assistant",
+            type: "eligibility_table",
+            data: projectedEligData,
+          }
+        : null;
+
+      const messages_to_add = isStudyPermit
+        ? [
+            {
+              role: "assistant",
+              content: `**Your Projected CRS Score: ${projectedCalcData.crs.total}**\n\nThis is your estimated score after graduation and 1 year of skilled work in Canada.\n\nAge: ${projectedCalcData.crs.breakdown.age} pts\nEducation: ${projectedCalcData.crs.breakdown.education} pts\nLanguage: ${projectedCalcData.crs.breakdown.language} pts\nSecond language: ${projectedCalcData.crs.breakdown.second_language} pts\nCanadian work: ${projectedCalcData.crs.breakdown.canadian_work} pts\nSkill transferability: ${projectedCalcData.crs.breakdown.transferability} pts\nAdditional: ${projectedCalcData.crs.breakdown.additional} pts`,
+            },
+            projectedEligMsg,
+            projectedDrawsMsg,
+          ]
+        : [crsMsg, eligMsg, drawsMsg];
+
+      setMessages((prev) => [...prev, ...messages_to_add]);
 
       await streamFromAI([...messages, completionMsg, systemMsg]);
-    } catch {
+    } catch (err) {
+      console.error("FULL ERROR:", err);
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content:
-            "Sorry, couldn't reach the calculator. Is the backend running?",
-        },
+        { role: "assistant", content: `Error: ${err.message}` },
       ]);
       setLoading(false);
     }

@@ -323,7 +323,7 @@ function EligibilityTable({ data }) {
   );
 }
 
-function DrawComparisonCard({ data }) {
+function DrawComparisonCard({ data, label }) {
   const rows = [
     { key: "CEC", label: "Canadian Experience Class" },
     { key: "FST", label: "Federal Skilled Trades" },
@@ -350,7 +350,8 @@ function DrawComparisonCard({ data }) {
           textTransform: "uppercase",
           color: "var(--color-text-secondary)",
         }}>
-        Draw History (Last 2 Years)
+        {/* Draw History (Last 2 Years) */}
+        {label ?? "Draw History (Last 2 Years)"}
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -460,7 +461,7 @@ export default function ChatMessage({
     return (
       <div style={{ display: "flex", justifyContent: "flex-start" }}>
         <div style={{ maxWidth: "90%" }}>
-          <DrawComparisonCard data={msg.data} />
+          <DrawComparisonCard data={msg.data} label={msg.label} />
         </div>
       </div>
     );
@@ -486,6 +487,22 @@ export default function ChatMessage({
             lineHeight: "1.65",
           }}>
           {isUser ? msg.content : <Markdown text={msg.content} />}
+
+          {msg.note && (
+            <div
+              style={{
+                fontSize: "12px",
+                color: "var(--color-text-secondary)",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                marginTop: "8px",
+                lineHeight: "1.5",
+              }}>
+              ℹ️ {msg.note}
+            </div>
+          )}
 
           {/* Streaming cursor */}
           {isStreaming && (
