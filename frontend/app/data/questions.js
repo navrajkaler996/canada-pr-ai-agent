@@ -272,19 +272,19 @@ export const QUESTIONS = [
         value: "married_not_accompanying",
       },
     ],
-    next: () => "age",
+    next: () => "birth_year",
   },
 
   // 2. Age
   {
-    id: "age",
-    message: "How old are you?",
+    id: "birth_year",
+    message: "What year were you born?",
     type: "text",
-    inputHint: "Enter your age",
+    inputHint: "e.g. 1998",
     validate: (val) => {
       const n = parseInt(val);
-      if (isNaN(n) || n < 18 || n > 100)
-        return "Please enter a valid age (18–100)";
+      if (isNaN(n) || n < 1924 || n > 2007)
+        return "Please enter a valid birth year";
       return null;
     },
     next: () => "education",
@@ -503,6 +503,21 @@ export const QUESTIONS = [
       { label: "3–4 year bachelor's degree", value: "three_plus_years" },
       { label: "Master's degree", value: "masters" },
       { label: "PhD", value: "phd" },
+    ],
+    next: () => "graduation_year",
+  },
+
+  {
+    id: "graduation_year",
+    message: "What year do you expect to graduate?",
+    type: "options",
+    options: [
+      { label: "2025", value: 2025 },
+      { label: "2026", value: 2026 },
+      { label: "2027", value: 2027 },
+      { label: "2028", value: 2028 },
+      { label: "2029", value: 2029 },
+      { label: "2030 or later", value: 2030 },
     ],
     next: () => "sibling_in_canada",
   },

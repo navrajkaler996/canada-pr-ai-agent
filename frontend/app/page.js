@@ -207,9 +207,12 @@ export default function Home() {
     const secondCLB = finalProfile.second_language_scores_clb ?? null;
     const spouseCLB = finalProfile.spouse_language_scores_clb ?? {};
 
+    const currentYear = new Date().getFullYear();
+    const currentAge = currentYear - parseInt(finalProfile.birth_year);
+
     const calcProfile = {
       has_spouse: hasSpouse,
-      age: parseInt(finalProfile.age),
+      age: currentAge,
       education: finalProfile.education,
       clb_speaking: firstCLB.speaking ?? 0,
       clb_listening: firstCLB.listening ?? 0,
@@ -263,9 +266,13 @@ export default function Home() {
                 ? 3
                 : 0;
 
+      const eligibilityYear = parseInt(finalProfile.graduation_year) + 1;
+      const projectedAge = eligibilityYear - parseInt(finalProfile.birth_year);
+
       const projectedProfile = isStudyPermit
         ? {
             ...calcProfile,
+            age: projectedAge,
             canadian_work_years: 1,
             canadian_noc: "A",
             canadian_education_years: projectedCanadianEducationYears,
