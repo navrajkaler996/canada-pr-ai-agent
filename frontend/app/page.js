@@ -71,6 +71,7 @@ export default function Home() {
     ],
   };
 
+  const [sessionId, setSessionId] = useState("");
   const [messages, setMessages] = useState([WELCOME]);
   const [profile, setProfile] = useState({});
   const [currentQuestionId, setCurrentQuestionId] = useState(null);
@@ -479,7 +480,25 @@ Instructions:
 
       setMessages((prev) => [...prev, ...messages_to_add]);
 
-      await streamFromAI([...messages, completionMsg, systemMsg]);
+      // Store profile in backend session
+      const sessionRes = await fetch("http://localhost:8000/session/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile: isStudyPermit ? projectedProfile : calcProfile,
+          crs_score: isStudyPermit
+            ? projectedCalcData.crs.total
+            : calcData.crs.total,
+          eligible_streams: isStudyPermit
+            ? projectedEligibleStreams
+            : eligibleStreams,
+        }),
+      });
+      const { session_id } = await sessionRes.json();
+
+      setSessionId(session_id);
+
+      await streamFromAI([...messages, completionMsg, systemMsg], session_id);
     } catch (err) {
       console.error("FULL ERROR:", err);
       setMessages((prev) => [
@@ -497,13 +516,15 @@ Instructions:
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
-    await streamFromAI(newMessages);
+    await streamFromAI(newMessages, sessionId);
   };
 
   // Stream response from backend
-  const streamFromAI = async (newMessages) => {
+  const streamFromAI = async (newMessages, sessionId = "") => {
     setLoading(true);
     setStreamingText("");
+
+    console.log("Sending session_id:", sessionId);
 
     try {
       const res = await fetch("http://localhost:8000/chat/stream", {
@@ -516,6 +537,7 @@ Instructions:
               role: m.role,
               content: m.content,
             })),
+          session_id: sessionId,
         }),
       });
 

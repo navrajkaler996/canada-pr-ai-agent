@@ -1,3 +1,6 @@
+from ai_agent import chat, chat_stream, create_session
+
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
@@ -10,7 +13,6 @@ import copy
 
 from crs_calculator import calculate_crs
 from ita_estimator import get_ita_likelihood
-from ai_agent import chat, chat_stream
 from eligibility_checker import check_eligibility
 from crs_calculator import calculate_crs
 from advice_engine import generate_advice
@@ -56,6 +58,12 @@ class Profile(BaseModel):
     foreign_noc: Optional[str] = None
     job_offer: bool = False
 
+
+class SessionRequest(BaseModel):
+    profile: dict
+    crs_score: int
+    eligible_streams: list[str]
+
 @app.get("/")
 def root():
     return {"message": "Canada PR AI Agent API"}
@@ -97,29 +105,34 @@ def latest_draw():
     }
 
 
+@app.post("/session/profile")
+def session_profile(req: SessionRequest):
+    session_id = create_session(req.profile, req.crs_score, req.eligible_streams)
+    return {"session_id": session_id}
+
 class ChatMessage(BaseModel):
     role: str
     content: str
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    session_id: str 
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = [m.dict() for m in req.messages]
-    reply = await chat(messages)
+    reply = await chat(messages, req.session_id)
     return {"reply": reply}
 
 @app.post("/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest):
     messages = [m.dict() for m in req.messages]
     return StreamingResponse(
-        chat_stream(messages),
+        chat_stream(messages, req.session_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
+ 
 class DrawCompareRequest(BaseModel):
     crs_score: int
     eligible_streams: list[str]  # e.g. ["CEC", "FSW", "FST", "French"]

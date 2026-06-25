@@ -1,7 +1,8 @@
 import os
 import json
+import uuid
 import psycopg2
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from dotenv import load_dotenv
 import anthropic
 
@@ -20,11 +21,37 @@ DB_CONFIG = {
     "port": 5432,
 }
 
-#  SYSTEM PROMPT 
+# ─── SESSION STORE ────────────────────────────────────────────────────────────
+# Simple in-memory store: { session_id: { profile, crs_score, streams } }
 
-SYSTEM_PROMPT = """You are canpr.ai, a Canadian Express Entry AI advisor.
+_sessions: dict = {}
 
-The user has already completed their profile and their CRS score and stream eligibility has already been calculated. You will receive their profile and score in the first message.
+
+def create_session(profile: dict, crs_score: int, eligible_streams: list) -> str:
+    session_id = str(uuid.uuid4())
+    _sessions[session_id] = {
+        "profile": profile,
+        "crs_score": crs_score,
+        "eligible_streams": eligible_streams,
+    }
+    print(f"✅ Session created: {session_id} | CRS: {crs_score} | Streams: {eligible_streams}")
+    return session_id
+
+
+def get_session(session_id: str) -> dict | None:
+    return _sessions.get(session_id)
+
+
+# ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
+
+def build_system_prompt(session: dict) -> str:
+    return f"""You are PRCompass, a Canadian Express Entry AI advisor.
+
+The user has already completed their CRS profile. Their data is stored server-side and available via tools.
+
+USER CONTEXT:
+- CRS Score: {session["crs_score"]}
+- Eligible Streams: {", ".join(session["eligible_streams"])}
 
 YOUR JOB:
 - Answer the user's questions about their CRS score, ITA chances, and how to improve
@@ -33,28 +60,41 @@ YOUR JOB:
 - Only discuss Canadian Express Entry immigration topics
 
 RULES:
-- ALWAYS call get_score_gaps tool when user asks how to improve their score. Never answer from memory.
-- ALWAYS call estimate_ita_timeline tool when user asks about ITA chances or timeline. Never answer from memory.
-- ALWAYS call calculate_crs tool when user asks about a specific scenario change. Never answer from memory.
-- Never state point values without calling a tool first.
-- For "how can I improve my score" questions: call get_score_gaps ONLY. One tool call is enough.
-- For "when will I get an ITA" questions: call estimate_ita_timeline ONLY.
-- For "what if I change X" questions: call calculate_crs ONLY.
-- Do not call multiple tools unless the question genuinely requires combining data from different sources.
+- NEVER construct or guess the user profile yourself — always use get_active_profile to retrieve it
+- ALWAYS call get_active_profile first before calling calculate_crs, get_score_gaps, or compare_scenarios
+- ALWAYS call get_score_gaps when user asks how to improve their score — never answer from memory
+- ALWAYS call estimate_ita_timeline when user asks about ITA chances or timeline — never answer from memory
+- ALWAYS call calculate_crs when user asks about a specific scenario change — never answer from memory
+- Never state point values, draw cutoffs, or timelines without calling a tool first
+- For score improvement questions: call get_active_profile then get_score_gaps — two calls maximum
+- For ITA timeline questions: call estimate_ita_timeline only — one call
+- For scenario questions: call get_active_profile then calculate_crs — two calls maximum
+- Do not discuss topics unrelated to Canadian immigration
+- Keep responses short — 3 to 5 sentences max unless the user asks for detail
 """
 
-#  TOOL DEFINITIONS 
+
+# ─── TOOL DEFINITIONS ─────────────────────────────────────────────────────────
 
 TOOLS = [
     {
+        "name": "get_active_profile",
+        "description": "Returns the user's exact active profile object from the server. ALWAYS call this first before calling calculate_crs, get_score_gaps, or compare_scenarios. Never construct the profile yourself.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
         "name": "calculate_crs",
-        "description": "Calculates CRS score for a given profile. Use this when the user asks how a specific change would affect their score — for example improving language scores, adding Canadian work experience, or getting a job offer. Modify only the relevant field in the profile and recalculate.",
+        "description": "Calculates CRS score for a modified profile. Use when the user asks how a specific change would affect their score. Always call get_active_profile first to get the base profile, then modify only the relevant field.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "profile": {
                     "type": "object",
-                    "description": "Full user profile with modified fields"
+                    "description": "Full user profile with modified fields — must be based on get_active_profile result"
                 }
             },
             "required": ["profile"]
@@ -62,7 +102,7 @@ TOOLS = [
     },
     {
         "name": "get_draw_history",
-        "description": "Returns recent Express Entry draw history filtered by stream. Use this when the user asks about ITA chances, cutoff trends, draw frequency, or historical cutoffs.",
+        "description": "Returns recent Express Entry draw history filtered by stream. Use when the user asks about ITA chances, cutoff trends, draw frequency, or historical cutoffs.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -80,17 +120,17 @@ TOOLS = [
     },
     {
         "name": "compare_scenarios",
-        "description": "Compares two versions of a profile side by side. Use when the user wants to evaluate a decision — for example applying now vs waiting, or comparing two different improvements.",
+        "description": "Compares two versions of a profile side by side. Use when the user wants to evaluate a decision. Always call get_active_profile first to get the base profile.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "profile_a": {
                     "type": "object",
-                    "description": "First profile — current state"
+                    "description": "First profile — must be based on get_active_profile result"
                 },
                 "profile_b": {
                     "type": "object",
-                    "description": "Second profile — modified state"
+                    "description": "Second profile — modified version"
                 },
                 "label_a": {
                     "type": "string",
@@ -106,13 +146,13 @@ TOOLS = [
     },
     {
         "name": "get_score_gaps",
-        "description": "Analyzes the user's profile and returns a ranked list of changes that would increase their CRS score the most. Use when the user asks how to improve their score or what is holding their score back.",
+        "description": "Analyzes the user's profile and returns a ranked list of changes that would increase their CRS score the most. Always call get_active_profile first to get the profile.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "profile": {
                     "type": "object",
-                    "description": "Full user profile"
+                    "description": "Full user profile — must be based on get_active_profile result"
                 },
                 "target_score": {
                     "type": "integer",
@@ -124,13 +164,13 @@ TOOLS = [
     },
     {
         "name": "estimate_ita_timeline",
-        "description": "Estimates ITA likelihood and timeline based on the user's CRS score and eligible stream. Uses real draw history and trends. Use when the user asks when they will get an ITA or what their chances are.",
+        "description": "Estimates ITA likelihood and timeline based on the user's CRS score and eligible stream. Use when the user asks when they will get an ITA or what their chances are.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "crs_score": {
                     "type": "integer",
-                    "description": "User's current or projected CRS score"
+                    "description": "User's current or projected CRS score — use the score from USER CONTEXT above"
                 },
                 "stream": {
                     "type": "string",
@@ -142,7 +182,12 @@ TOOLS = [
     }
 ]
 
-#  TOOL EXECUTORS ──
+
+# ─── TOOL EXECUTORS ───────────────────────────────────────────────────────────
+
+def run_get_active_profile(session: dict) -> dict:
+    return {"profile": session["profile"]}
+
 
 def run_calculate_crs(profile: dict) -> dict:
     result = calculate_crs(profile)
@@ -227,7 +272,7 @@ def run_get_score_gaps(profile: dict, target_score: int = None) -> dict:
                 "description": "Add French CLB 7 in all abilities"
             }
 
-    # Canadian work experience
+    # Canadian work experience — only suggest if less than 5 years
     if p.get("canadian_work_years", 0) < 5:
         sim = {**p, "canadian_work_years": p.get("canadian_work_years", 0) + 1}
         new_score = calculate_crs(sim)["total"]
@@ -235,7 +280,7 @@ def run_get_score_gaps(profile: dict, target_score: int = None) -> dict:
             results["one_more_canadian_work_year"] = {
                 "new_score": new_score,
                 "delta": new_score - base_score,
-                "description": f"1 additional year of Canadian work experience"
+                "description": f"1 additional year of Canadian work experience ({p.get('canadian_work_years', 0) + 1} total)"
             }
 
     # Job offer
@@ -267,10 +312,8 @@ def run_estimate_ita_timeline(crs_score: int, stream: str) -> dict:
     qualifying = [c for c in cutoffs if crs_score >= c]
     percentage = round(len(qualifying) / len(cutoffs) * 100, 1)
 
-    # Estimate draw frequency
     dates = [d["date"] for d in draws["draws"]]
     if len(dates) >= 2:
-        from datetime import datetime
         d1 = datetime.strptime(dates[0], "%Y-%m-%d")
         d2 = datetime.strptime(dates[-1], "%Y-%m-%d")
         avg_days_between = (d1 - d2).days / (len(dates) - 1)
@@ -285,7 +328,7 @@ def run_estimate_ita_timeline(crs_score: int, stream: str) -> dict:
         estimated_wait = f"{round(avg_days_between * 2)} days (1-2 draws)"
     elif percentage >= 50:
         outlook = "Moderate — you would have qualified in about half of recent draws"
-        estimated_wait = f"1-3 months"
+        estimated_wait = "1-3 months"
     else:
         outlook = "Below recent cutoffs — score improvement recommended before expecting an ITA"
         estimated_wait = "Uncertain — depends on score improvement"
@@ -302,12 +345,14 @@ def run_estimate_ita_timeline(crs_score: int, stream: str) -> dict:
     }
 
 
-#  TOOL DISPATCHER ─
+# ─── TOOL DISPATCHER ──────────────────────────────────────────────────────────
 
-def execute_tool(tool_name: str, tool_input: dict) -> str:
-    print(f"📥 INPUT: {json.dumps(tool_input, indent=2)}")  # ADD THIS
+def execute_tool(tool_name: str, tool_input: dict, session: dict) -> str:
+    print(f"\n🔧 TOOL CALLED: {tool_name}")
     try:
-        if tool_name == "calculate_crs":
+        if tool_name == "get_active_profile":
+            result = run_get_active_profile(session)
+        elif tool_name == "calculate_crs":
             result = run_calculate_crs(tool_input["profile"])
         elif tool_name == "get_draw_history":
             result = run_get_draw_history(
@@ -336,21 +381,19 @@ def execute_tool(tool_name: str, tool_input: dict) -> str:
     except Exception as e:
         result = {"error": str(e)}
 
+    print(f"✅ RESULT: {json.dumps(result)[:200]}")
     return json.dumps(result)
 
 
-#  MAIN CHAT FUNCTION ─
+# ─── MAIN CHAT FUNCTION ───────────────────────────────────────────────────────
 
-async def chat(messages: list[dict]) -> str:
+async def chat(messages: list[dict], session_id: str) -> str:
+    session = get_session(session_id)
+    if not session:
+        return "Session not found. Please recalculate your CRS score."
+
+    system = build_system_prompt(session)
     tool_calls_made = 0
-
-    # Build dynamic system prompt with profile context
-    system = SYSTEM_PROMPT
-
-    if messages and messages[0]["role"] == "user":
-        system += f"\n\n{messages[0]['content']}"
-        # Send remaining messages only (skip the system context message)
-        messages = messages[1:]
 
     while tool_calls_made <= MAX_TOOL_CALLS:
         response = client.messages.create(
@@ -361,33 +404,28 @@ async def chat(messages: list[dict]) -> str:
             messages=messages
         )
 
-        # Claude wants to call a tool
         if response.stop_reason == "tool_use":
-            # Add Claude's response to message history
             messages.append({
                 "role": "assistant",
                 "content": response.content
             })
 
-            # Execute all requested tools
             tool_results = []
             for block in response.content:
                 if block.type == "tool_use":
                     tool_calls_made += 1
-                    result = execute_tool(block.name, block.input)
+                    result = execute_tool(block.name, block.input, session)
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": result
                     })
 
-            # Add tool results to message history
             messages.append({
                 "role": "user",
                 "content": tool_results
             })
 
-        # Claude is done — return final answer
         elif response.stop_reason == "end_turn":
             for block in response.content:
                 if hasattr(block, "text"):
@@ -400,11 +438,10 @@ async def chat(messages: list[dict]) -> str:
     return "I reached the maximum number of tool calls. Please try asking in a simpler way."
 
 
-#  STREAMING (optional — for later) 
+# ─── STREAMING ────────────────────────────────────────────────────────────────
 
-async def chat_stream(messages: list[dict]):
-    reply = await chat(messages)
-    import json as _json
+async def chat_stream(messages: list[dict], session_id: str = ""):
+    reply = await chat(messages, session_id)
     for token in reply.split(" "):
-        yield f"data: {_json.dumps({'token': token + ' '})}\n\n"
+        yield f"data: {json.dumps({'token': token + ' '})}\n\n"
     yield "data: [DONE]\n\n"
