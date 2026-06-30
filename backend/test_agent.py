@@ -1,103 +1,112 @@
 """
-Test script for PRCompass agentic AI agent.
-Run this from your backend directory:
-    python test_agent.py
+Test script for User B — Currently on study permit doing a Master's in Canada.
+Tests current score vs projected score after graduation + 1 year NOC A work.
+
+Run from backend directory:
+    python test_user_b_masters.py
 """
 
-import asyncio
-import json
-from ai_agent import chat
+from crs_calculator import calculate_crs
+from datetime import datetime
 
-# ─── SAMPLE PROFILE ───────────────────────────────────────────────────────────
-# This simulates what your frontend should send after CRS calculation
+# ─── USER B PROFILE ───────────────────────────────────────────────────────────
+# Born: 1996
+# Current age: 2026 - 1996 = 30
+# Doing: Master's degree in Canada
+# Expected graduation: 2028
+# Eligibility year: 2029
+# Projected age at eligibility: 2029 - 1996 = 33
 
-SAMPLE_PROFILE = {
+BIRTH_YEAR = 1996
+GRADUATION_YEAR = 2028
+CURRENT_YEAR = datetime.now().year
+ELIGIBILITY_YEAR = GRADUATION_YEAR + 1
+
+CURRENT_AGE = CURRENT_YEAR - BIRTH_YEAR
+PROJECTED_AGE = ELIGIBILITY_YEAR - BIRTH_YEAR
+
+print(f"Birth year: {BIRTH_YEAR}")
+print(f"Current age: {CURRENT_AGE}")
+print(f"Graduation year: {GRADUATION_YEAR}")
+print(f"Eligibility year: {ELIGIBILITY_YEAR}")
+print(f"Projected age at eligibility: {PROJECTED_AGE}")
+print()
+
+# ─── CURRENT PROFILE (today, no Canadian work experience) ─────────────────────
+
+current_profile = {
     "has_spouse": False,
-    "age": 28,
-    "education": "bachelors",
+    "age": CURRENT_AGE,
+    "education": "bachelors",           # completed before coming to Canada
     "clb_speaking": 9,
-    "clb_listening": 9,
-    "clb_reading": 9,
-    "clb_writing": 9,
+    "clb_listening": 11,
+    "clb_reading": 11,
+    "clb_writing": 11,
     "canadian_work_years": 0,
     "foreign_work_years": 3,
     "first_language": "english",
     "has_canadian_sibling": False,
     "french_clb_scores": [],
-    "canadian_education_years": 2,
+    "canadian_education_years": 0,      # masters not yet complete
     "has_provincial_nomination": False,
     "has_certificate": False,
+    "job_offer": False,
+    "trade_certificate": False,
+    "second_language_test": "none",
+    "canadian_noc": None,
+    "foreign_noc": "A",
     "spouse_education": None,
     "spouse_clb_speaking": None,
     "spouse_clb_listening": None,
     "spouse_clb_reading": None,
     "spouse_clb_writing": None,
     "spouse_canadian_work_years": None,
-    "canadian_noc": None,
-    "trade_certificate": False,
-    "second_language_test": "none",
-    "foreign_noc": None,
-    "job_offer": False
 }
 
-# ─── TEST QUESTIONS ───────────────────────────────────────────────────────────
+# ─── PROJECTED PROFILE (after graduation + 1 year NOC A work) ─────────────────
 
-TESTS = [
-    {
-        "name": "Test 1 — ITA Timeline",
-        "question": "When should I expect an ITA? I am eligible for Canadian Experience Class."
-    },
-    {
-        "name": "Test 2 — Score Improvement",
-        "question": "How can I improve my CRS score?"
-    },
-    {
-        "name": "Test 3 — Scenario Comparison",
-        "question": "What if I improve my language scores to CLB 10? How much would that help?"
-    }
-]
+projected_profile = {
+    **current_profile,
+    "age": PROJECTED_AGE,               # age at eligibility
+    "education": "masters",             # masters completed
+    "canadian_work_years": 1,           # 1 year NOC A work
+    "canadian_noc": "A",
+    "canadian_education_years": 3,      # masters = 3+ years for CRS purposes
+}
 
-# ─── RUN TESTS ────────────────────────────────────────────────────────────────
+# ─── CALCULATE ────────────────────────────────────────────────────────────────
 
-async def run_test(name: str, question: str):
-    print(f"\n{'='*60}")
-    print(f"{name}")
-    print(f"{'='*60}")
-    print(f"Question: {question}")
-    print(f"{'─'*60}")
+current_result = calculate_crs(current_profile)
+projected_result = calculate_crs(projected_profile)
 
-    # This is how your frontend should format the first message
-    # Profile + CRS + question all in one context message
-    messages = [
-        {
-            "role": "user",
-            "content": f"""Here is my profile:
-{json.dumps(SAMPLE_PROFILE, indent=2)}
+# ─── PRINT RESULTS ────────────────────────────────────────────────────────────
 
-Question: {question}"""
-        }
-    ]
+print("=" * 50)
+print("CURRENT SCORE (today)")
+print("=" * 50)
+print(f"Total CRS: {current_result['total']}")
+print()
+for key, val in current_result["breakdown"].items():
+    print(f"  {key:<20} {val}")
 
-    try:
-        reply = await chat(messages)
-        print(f"Claude: {reply}")
-        print(f"\n✅ PASSED")
-    except Exception as e:
-        print(f"\n❌ FAILED: {e}")
+print()
+print("=" * 50)
+print(f"PROJECTED SCORE (after graduation {GRADUATION_YEAR} + 1 year work)")
+print("=" * 50)
+print(f"Total CRS: {projected_result['total']}")
+print()
+for key, val in projected_result["breakdown"].items():
+    print(f"  {key:<20} {val}")
 
-
-async def main():
-    print("PRCompass Agent Test")
-    print("Running 3 tests...\n")
-
-    for test in TESTS:
-        await run_test(test["name"], test["question"])
-        # Small delay between tests to avoid rate limiting
-        await asyncio.sleep(2)
-
-    print(f"\n{'='*60}")
-    print("All tests complete.")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+print()
+print("=" * 50)
+print("DELTA (what changes)")
+print("=" * 50)
+print(f"Score gain: +{projected_result['total'] - current_result['total']} points")
+print()
+for key in current_result["breakdown"]:
+    current_val = current_result["breakdown"][key]
+    projected_val = projected_result["breakdown"][key]
+    delta = projected_val - current_val
+    if delta != 0:
+        print(f"  {key:<20} {current_val} → {projected_val} ({'+' if delta > 0 else ''}{delta})")
