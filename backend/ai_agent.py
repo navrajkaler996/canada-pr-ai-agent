@@ -21,7 +21,7 @@ DB_CONFIG = {
     "port": 5432,
 }
 
-# ─── SESSION STORE ────────────────────────────────────────────────────────────
+#  SESSION STORE 
 # Simple in-memory store: { session_id: { profile, crs_score, streams } }
 
 _sessions: dict = {}
@@ -42,7 +42,7 @@ def get_session(session_id: str) -> dict | None:
     return _sessions.get(session_id)
 
 
-# ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
+#  SYSTEM PROMPT 
 
 def build_system_prompt(session: dict) -> str:
     return f"""You are PRCompass, a Canadian Express Entry AI advisor.
@@ -60,21 +60,34 @@ YOUR JOB:
 - Only discuss Canadian Express Entry immigration topics
 
 RULES:
-- NEVER construct or guess the user profile yourself — always use get_active_profile to retrieve it
-- ALWAYS call get_active_profile first before calling calculate_crs, get_score_gaps, or compare_scenarios
-- ALWAYS call get_score_gaps when user asks how to improve their score — never answer from memory
-- ALWAYS call estimate_ita_timeline when user asks about ITA chances or timeline — never answer from memory
-- ALWAYS call calculate_crs when user asks about a specific scenario change — never answer from memory
-- Never state point values, draw cutoffs, or timelines without calling a tool first
-- For score improvement questions: call get_active_profile then get_score_gaps — two calls maximum
-- For ITA timeline questions: call estimate_ita_timeline only — one call
-- For scenario questions: call get_active_profile then calculate_crs — two calls maximum
-- Do not discuss topics unrelated to Canadian immigration
-- Keep responses short — 3 to 5 sentences max unless the user asks for detail
+# Tool-based questions — always use tools
+- ALWAYS call get_active_profile then get_score_gaps when user asks how to improve their score. Never answer from memory.
+- ALWAYS call estimate_ita_timeline when user asks about ITA chances or timeline. Never answer from memory.
+- ALWAYS call calculate_crs when user asks about a specific scenario change. Never answer from memory.
+- ALWAYS call get_draw_history when user asks about recent draws or cutoff trends. Never answer from memory.
+- Never state point values, draw cutoffs, or timelines without calling a tool first.
+
+# Explanation questions — Claude can answer from knowledge
+- You can explain immigration concepts like CEC, FSW, NOC, CLB, PGWP, LMIA from your knowledge.
+- Keep explanations brief and always relate them back to the user's specific situation.
+
+# Personal advice questions — guide but don't decide
+- For questions like "should I apply now or wait", give a balanced answer based on tool data but always recommend consulting a Regulated Canadian Immigration Consultant (RCIC) for personal decisions.
+- Never tell a user what they should definitively do — present options and data instead.
+
+# Out of scope questions
+- If the user asks about anything unrelated to Canadian immigration, politely redirect them.
+- Never answer questions about other countries' immigration systems, job searching, resume writing, or general life advice.
+
+# General
+- Never ask follow up questions at the end of your response. Wait for the user to ask their own questions.
+- Never repeat information already shown in the results cards above the chat.
+- Keep responses concise — 3 to 5 sentences unless the user asks for more detail.
+- Always recommend verifying important decisions with IRCC's official website or an RCIC.
 """
 
 
-# ─── TOOL DEFINITIONS ─────────────────────────────────────────────────────────
+#  TOOL DEFINITIONS 
 
 TOOLS = [
     {
@@ -183,7 +196,7 @@ TOOLS = [
 ]
 
 
-# ─── TOOL EXECUTORS ───────────────────────────────────────────────────────────
+#  TOOL EXECUTORS ──
 
 def run_get_active_profile(session: dict) -> dict:
     return {"profile": session["profile"]}
@@ -345,7 +358,7 @@ def run_estimate_ita_timeline(crs_score: int, stream: str) -> dict:
     }
 
 
-# ─── TOOL DISPATCHER ──────────────────────────────────────────────────────────
+#  TOOL DISPATCHER ─
 
 def execute_tool(tool_name: str, tool_input: dict, session: dict) -> str:
     print(f"\n🔧 TOOL CALLED: {tool_name}")
@@ -385,7 +398,7 @@ def execute_tool(tool_name: str, tool_input: dict, session: dict) -> str:
     return json.dumps(result)
 
 
-# ─── MAIN CHAT FUNCTION ───────────────────────────────────────────────────────
+#  MAIN CHAT FUNCTION ─
 
 async def chat(messages: list[dict], session_id: str) -> str:
     session = get_session(session_id)
@@ -438,7 +451,7 @@ async def chat(messages: list[dict], session_id: str) -> str:
     return "I reached the maximum number of tool calls. Please try asking in a simpler way."
 
 
-# ─── STREAMING ────────────────────────────────────────────────────────────────
+#  STREAMING ─
 
 async def chat_stream(messages: list[dict], session_id: str = ""):
     reply = await chat(messages, session_id)

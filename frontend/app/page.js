@@ -192,6 +192,15 @@ export default function Home() {
       : current;
   };
 
+  const getAgeWarning = (projectedAge) => {
+    if (projectedAge >= 35) {
+      return "\n\n⚠️ This score assumes you secure a skilled job shortly after graduation. At your projected age, every year of delay significantly reduces your age points. We strongly recommend starting your job search before graduation.";
+    } else if (projectedAge >= 30) {
+      return "\n\n⚠️ This score assumes you secure a skilled job shortly after graduation. You are approaching the age range where CRS age points begin to decline — delays in finding work after graduation will reduce your score.";
+    }
+    return "";
+  };
+
   // Finish CRS flow — send profile to AI
 
   const finishCRSFlow = async (finalProfile) => {
@@ -437,6 +446,7 @@ Instructions:
         6. End with the follow_up_question exactly as written — do not modify it.
         7. CEC means Canadian Experience Class — never expand or rephrase this acronym.
         8. Do NOT add anything not in the structured advice above. No likelihood percentages, no extra warnings, no extra improvements.
+
         `,
       };
 
@@ -478,7 +488,7 @@ Instructions:
         ? [
             {
               role: "assistant",
-              content: `**Your Projected CRS Score: ${projectedCalcData.crs.total}**\n\nThis is your estimated score after graduation and 1 year of skilled work in Canada.\n\nAge: ${projectedCalcData.crs.breakdown.age} pts\nEducation: ${projectedCalcData.crs.breakdown.education} pts\nLanguage: ${projectedCalcData.crs.breakdown.language} pts\nSecond language: ${projectedCalcData.crs.breakdown.second_language} pts\nCanadian work: ${projectedCalcData.crs.breakdown.canadian_work} pts\nSkill transferability: ${projectedCalcData.crs.breakdown.transferability} pts\nAdditional: ${projectedCalcData.crs.breakdown.additional} pts`,
+              content: `**Your Projected CRS Score: ${projectedCalcData.crs.total}**\n\nThis is your estimated score after graduation and 1 year of skilled work in Canada.\n\nAge: ${projectedCalcData.crs.breakdown.age} pts\nEducation: ${projectedCalcData.crs.breakdown.education} pts\nLanguage: ${projectedCalcData.crs.breakdown.language} pts\nSecond language: ${projectedCalcData.crs.breakdown.second_language} pts\nCanadian work: ${projectedCalcData.crs.breakdown.canadian_work} pts\nSkill transferability: ${projectedCalcData.crs.breakdown.transferability} pts\nAdditional: ${projectedCalcData.crs.breakdown.additional} pts${getAgeWarning(projectedAge)}`,
             },
             projectedEligMsg,
             projectedDrawsMsg,

@@ -255,6 +255,7 @@ export const QUESTIONS = [
     ],
     next: () => "marital_status",
   },
+
   // 1. Marital status
   {
     id: "marital_status",
@@ -275,7 +276,7 @@ export const QUESTIONS = [
     next: () => "birth_year",
   },
 
-  // 2. Age
+  // 2. Birth year
   {
     id: "birth_year",
     message: "What year were you born?",
@@ -416,7 +417,9 @@ export const QUESTIONS = [
     next: (profile) =>
       profile.marital_status === "married_accompanying"
         ? "spouse_canadian_experience"
-        : "foreign_experience",
+        : profile.foreign_experience > 0
+          ? "foreign_experience"
+          : "occupation_category",
   },
 
   // 13. Spouse Canadian work experience
@@ -438,7 +441,9 @@ export const QUESTIONS = [
     options: FOREIGN_EXPERIENCE_OPTIONS,
     next: (profile) => {
       if (profile.foreign_experience > 0) return "foreign_noc";
-      return "trade_certificate";
+      return profile.canadian_experience > 0
+        ? "occupation_category"
+        : "trade_certificate";
     },
   },
 
@@ -452,6 +457,30 @@ export const QUESTIONS = [
       { label: "NOC A — Professional (needs a degree)", value: "A" },
       { label: "NOC B — Technical / skilled trade", value: "B" },
       { label: "NOC C or D — Semi or low-skilled", value: "CD" },
+    ],
+    next: () => "occupation_category",
+  },
+
+  // 15b. Occupation category
+  {
+    id: "occupation_category",
+    message: "Which field best describes your work experience?",
+    note: () =>
+      "This helps us match you to category-based Express Entry draws.",
+    type: "options",
+    options: [
+      { label: "Technology, Engineering, or Science", value: "stem" },
+      {
+        label: "Healthcare, Medicine, or Social Services",
+        value: "healthcare",
+      },
+      { label: "Education or Teaching", value: "education" },
+      { label: "Skilled Trades or Construction", value: "trades" },
+      { label: "Transportation or Logistics", value: "transport" },
+      { label: "Agriculture or Food Production", value: "agriculture" },
+      { label: "Business, Finance, or Management", value: "business" },
+      { label: "Law, Policy, or Social Sciences", value: "law" },
+      { label: "Other / Not listed", value: "other" },
     ],
     next: () => "trade_certificate",
   },
@@ -507,6 +536,7 @@ export const QUESTIONS = [
     next: () => "graduation_year",
   },
 
+  // 17c. Graduation year (only for User B)
   {
     id: "graduation_year",
     message: "What year do you expect to graduate?",
