@@ -371,6 +371,7 @@ export default function Home() {
             crs_score: calcData.crs.total,
             eligible_streams:
               eligibleStreams.length > 0 ? eligibleStreams : ["FSW"],
+            occupation_category: finalProfile.occupation_category ?? null,
           }),
         }),
         ...(isStudyPermit
@@ -381,6 +382,7 @@ export default function Home() {
                 body: JSON.stringify({
                   crs_score: projectedCalcData.crs.total,
                   eligible_streams: projectedEligibleStreams,
+                  occupation_category: finalProfile.occupation_category ?? null,
                 }),
               }),
             ]
@@ -388,9 +390,18 @@ export default function Home() {
       ];
 
       const drawsResponses = await Promise.all(drawsRequests);
-      const drawsData = await drawsResponses[0].json();
-      const projectedDrawsData = isStudyPermit
+      const drawsResponse = await drawsResponses[0].json();
+      const drawsData = drawsResponse.streams;
+      const categoryData = drawsResponse.category;
+
+      const projectedDrawsResponse = isStudyPermit
         ? await drawsResponses[1].json()
+        : null;
+      const projectedDrawsData = isStudyPermit
+        ? projectedDrawsResponse.streams
+        : null;
+      const projectedCategoryData = isStudyPermit
+        ? projectedDrawsResponse.category
         : null;
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -407,6 +418,8 @@ export default function Home() {
           crs_score: isStudyPermit
             ? projectedCalcData.crs.total
             : calcData.crs.total,
+          category_draw: isStudyPermit ? projectedCategoryData : categoryData,
+          occupation_category: finalProfile.occupation_category ?? null,
         }),
       });
 
@@ -484,6 +497,34 @@ Instructions:
           }
         : null;
 
+      const categoryLabel = {
+        stem: "Technology, Engineering & Science",
+        healthcare: "Healthcare & Social Services",
+        education: "Education",
+        trades: "Skilled Trades",
+        transport: "Transportation",
+        agriculture: "Agriculture & Food Production",
+        business: "Business & Management",
+      };
+
+      const categoryDrawsMsg = categoryData
+        ? {
+            role: "assistant",
+            type: "draws_card",
+            label: `Category Draw — ${categoryLabel[finalProfile.occupation_category] ?? finalProfile.occupation_category}`,
+            data: { [finalProfile.occupation_category]: categoryData },
+          }
+        : null;
+
+      const projectedCategoryDrawsMsg = projectedCategoryData
+        ? {
+            role: "assistant",
+            type: "draws_card",
+            label: `Category Draw — ${categoryLabel[finalProfile.occupation_category] ?? finalProfile.occupation_category}`,
+            data: { [finalProfile.occupation_category]: projectedCategoryData },
+          }
+        : null;
+
       const messages_to_add = isStudyPermit
         ? [
             {
@@ -492,8 +533,14 @@ Instructions:
             },
             projectedEligMsg,
             projectedDrawsMsg,
+            ...(projectedCategoryDrawsMsg ? [projectedCategoryDrawsMsg] : []),
           ]
-        : [crsMsg, eligMsg, drawsMsg];
+        : [
+            crsMsg,
+            eligMsg,
+            drawsMsg,
+            ...(categoryDrawsMsg ? [categoryDrawsMsg] : []),
+          ];
 
       setMessages((prev) => [...prev, ...messages_to_add]);
 

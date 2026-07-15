@@ -324,12 +324,25 @@ function EligibilityTable({ data }) {
 }
 
 function DrawComparisonCard({ data, label }) {
-  const rows = [
-    { key: "CEC", label: "Canadian Experience Class" },
-    { key: "FST", label: "Federal Skilled Trades" },
-    { key: "French", label: "French-Language Category" },
-    { key: "FSW", label: "Federal Skilled Worker" },
-  ];
+  const STREAM_LABELS = {
+    CEC: "Canadian Experience Class",
+    FST: "Federal Skilled Trades",
+    French: "French-Language Category",
+    FSW: "Federal Skilled Worker",
+    stem: "STEM Occupations",
+    healthcare: "Healthcare & Social Services",
+    education: "Education Occupations",
+    trades: "Skilled Trades",
+    transport: "Transportation",
+    agriculture: "Agriculture & Food Production",
+    business: "Business & Management",
+  };
+
+  const rows = Object.entries(data)
+    .filter(([_, s]) => s && !s.error)
+    .map(([key, s]) => ({ key, s }));
+
+  const hasNoDraws = Object.entries(data).every(([_, s]) => !s || s.error);
 
   return (
     <div
@@ -350,81 +363,98 @@ function DrawComparisonCard({ data, label }) {
           textTransform: "uppercase",
           color: "var(--color-text-secondary)",
         }}>
-        {/* Draw History (Last 2 Years) */}
         {label ?? "Draw History (Last 2 Years)"}
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-            {["Stream", "Qualifying", "Cutoff Range", "Last Draw"].map((h) => (
-              <th
-                key={h}
-                style={{
-                  padding: "8px 14px",
-                  textAlign: "left",
-                  fontSize: "12px",
-                  fontWeight: 500,
-                  color: "var(--color-text-secondary)",
-                }}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ key, label }) => {
-            const s = data[key];
-            if (!s || s.error) return null;
-            const qualifyPct = s.percentage;
-            const color =
-              qualifyPct >= 50 ? "#4CAF50" : qualifyPct >= 25 ? "#FF9800" : RED;
-            return (
-              <tr
-                key={key}
-                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <td
-                  style={{
-                    padding: "10px 14px",
-                    fontWeight: 500,
-                    color: "var(--color-text-primary)",
-                  }}>
-                  {label}
-                </td>
-                <td style={{ padding: "10px 14px" }}>
-                  <span style={{ color, fontWeight: 600 }}>
-                    {s.qualifying_draws}/{s.total_draws}
-                  </span>
-                  <span
+
+      {hasNoDraws ? (
+        <div
+          style={{
+            padding: "12px 14px",
+            color: "var(--color-text-secondary)",
+            fontSize: "13px",
+          }}>
+          No draws found in the last 2 years for your eligible streams.
+        </div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              {["Stream", "Qualifying", "Cutoff Range", "Last Draw"].map(
+                (h) => (
+                  <th
+                    key={h}
                     style={{
-                      color: "var(--color-text-secondary)",
+                      padding: "8px 14px",
+                      textAlign: "left",
                       fontSize: "12px",
-                      marginLeft: "4px",
+                      fontWeight: 500,
+                      color: "var(--color-text-secondary)",
                     }}>
-                    ({qualifyPct}%)
-                  </span>
-                </td>
-                <td
-                  style={{
-                    padding: "10px 14px",
-                    color: "var(--color-text-secondary)",
-                    fontSize: "13px",
-                  }}>
-                  {s.lowest_cutoff} – {s.highest_cutoff}
-                </td>
-                <td
-                  style={{
-                    padding: "10px 14px",
-                    color: "var(--color-text-secondary)",
-                    fontSize: "13px",
-                  }}>
-                  {s.last_draw_cutoff}{" "}
-                  <span style={{ fontSize: "11px" }}>({s.last_draw_date})</span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    {h}
+                  </th>
+                ),
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ key, s }) => {
+              const qualifyPct = s.percentage;
+              const color =
+                qualifyPct >= 50
+                  ? "#4CAF50"
+                  : qualifyPct >= 25
+                    ? "#FF9800"
+                    : RED;
+              return (
+                <tr
+                  key={key}
+                  style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                  <td
+                    style={{
+                      padding: "10px 14px",
+                      fontWeight: 500,
+                      color: "var(--color-text-primary)",
+                    }}>
+                    {STREAM_LABELS[key] ?? key}
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <span style={{ color, fontWeight: 600 }}>
+                      {s.qualifying_draws}/{s.total_draws}
+                    </span>
+                    <span
+                      style={{
+                        color: "var(--color-text-secondary)",
+                        fontSize: "12px",
+                        marginLeft: "4px",
+                      }}>
+                      ({qualifyPct}%)
+                    </span>
+                  </td>
+                  <td
+                    style={{
+                      padding: "10px 14px",
+                      color: "var(--color-text-secondary)",
+                      fontSize: "13px",
+                    }}>
+                    {s.lowest_cutoff} – {s.highest_cutoff}
+                  </td>
+                  <td
+                    style={{
+                      padding: "10px 14px",
+                      color: "var(--color-text-secondary)",
+                      fontSize: "13px",
+                    }}>
+                    {s.last_draw_cutoff}{" "}
+                    <span style={{ fontSize: "11px" }}>
+                      ({s.last_draw_date})
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

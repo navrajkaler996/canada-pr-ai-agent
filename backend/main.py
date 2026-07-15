@@ -133,15 +133,24 @@ async def chat_stream_endpoint(req: ChatRequest):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
  
+CATEGORY_DRAW_MAP = {
+    "stem": "%STEM%",
+    "healthcare": "%health%",
+    "education": "%education%",
+    "trades": "%trade%",
+    "transport": "%transport%",
+    "agriculture": "%agriculture%",
+    "business": "%manager%",
+}
+
 class DrawCompareRequest(BaseModel):
     crs_score: int
-    eligible_streams: list[str]  # e.g. ["CEC", "FSW", "FST", "French"]
+    eligible_streams: list[str]
+    occupation_category: Optional[str] = None
+
 
 @app.post("/draws/compare")
 def draws_compare(req: DrawCompareRequest):
-    import psycopg2
-    from datetime import date, timedelta
-
     conn = psycopg2.connect(
         dbname="canada_pr",
         user="navrajkaler",
@@ -149,24 +158,25 @@ def draws_compare(req: DrawCompareRequest):
         port="5432"
     )
     cur = conn.cursor()
-
     two_years_ago = date.today() - timedelta(days=730)
-    results = {}
 
     stream_map = {
-    "CEC":    "Canadian Experience Class",
-    "FSW":    "Federal Skilled Worker",
-    "FST":    "Federal Skilled Trades",
-    "French": "French%",         
-    "PNP":    "Provincial Nominee Program",
-    "General": "General",
-}
+        "CEC": "Canadian Experience Class",
+        "FSW": "Federal Skilled Worker",
+        "FST": "Federal Skilled Trades",
+        "French": "French%",
+        "PNP": "Provincial Nominee Program",
+        "General": "General",
+    }
+
+    results = {}
+
+    # ── Stream draws ──────────────────────────────────────────
     for stream in req.eligible_streams:
         pattern = stream_map.get(stream)
         if not pattern:
             continue
 
-        # Use ILIKE only for French (two name variants), exact match for rest
         if stream == "French":
             cur.execute("""
                 SELECT draw_crs, draw_date
@@ -183,27 +193,15 @@ def draws_compare(req: DrawCompareRequest):
                 AND draw_date >= %s
                 ORDER BY draw_date DESC
             """, (pattern, two_years_ago))
-            pattern = stream_map.get(stream)
-            if not pattern:
-                continue
 
-            cur.execute("""
-                SELECT draw_crs, draw_date
-                FROM draws
-                WHERE draw_name ILIKE %s
-                AND draw_date >= %s
-                ORDER BY draw_date DESC
-            """, (pattern, two_years_ago))
+        rows = cur.fetchall()
 
-            rows = cur.fetchall()
-
-            if not rows:
-                results[stream] = {"error": "no draws found"}
-                continue
+        if not rows:
+            results[stream] = {"error": "no draws found"}
+            continue
 
         cutoffs = [r[0] for r in rows]
         last_draw = rows[0]
-
         qualifying = [c for c in cutoffs if req.crs_score >= c]
 
         results[stream] = {
@@ -216,11 +214,45 @@ def draws_compare(req: DrawCompareRequest):
             "last_draw_cutoff": last_draw[0],
         }
 
+    # ── Category draws ────────────────────────────────────────
+    category_result = None
+    category_pattern = CATEGORY_DRAW_MAP.get(req.occupation_category)
+
+    if category_pattern:
+        cur.execute("""
+            SELECT draw_crs, draw_date, draw_name
+            FROM draws
+            WHERE draw_name ILIKE %s
+            AND draw_date >= %s
+            ORDER BY draw_date DESC
+        """, (category_pattern, two_years_ago))
+
+        rows = cur.fetchall()
+
+        if rows:
+            cutoffs = [r[0] for r in rows]
+            last_draw = rows[0]
+            qualifying = [c for c in cutoffs if req.crs_score >= c]
+
+            category_result = {
+                "category": req.occupation_category,
+                "total_draws": len(cutoffs),
+                "qualifying_draws": len(qualifying),
+                "percentage": round(len(qualifying) / len(cutoffs) * 100, 1),
+                "lowest_cutoff": min(cutoffs),
+                "highest_cutoff": max(cutoffs),
+                "last_draw_date": str(last_draw[1]),
+                "last_draw_cutoff": last_draw[0],
+                "last_draw_name": last_draw[2],
+            }
+
     cur.close()
     conn.close()
-    return results
 
-
+    return {
+        "streams": results,
+        "category": category_result
+    }
 @app.post("/score/simulate")
 def score_simulate(profile: Profile):
 
@@ -314,6 +346,8 @@ class AdviceRequest(BaseModel):
     draws: dict
     simulations: dict
     crs_score: int
+    category_draw: Optional[dict] = None
+    occupation_category: Optional[str] = None
 
 @app.post("/advice")
 def advice(req: AdviceRequest):
@@ -324,4 +358,6 @@ def advice(req: AdviceRequest):
         draws=req.draws,
         simulations=req.simulations,
         crs_score=req.crs_score,
+        category_draw=req.category_draw,
+        occupation_category=req.occupation_category,
     )
