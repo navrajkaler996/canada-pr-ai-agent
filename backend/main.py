@@ -16,6 +16,9 @@ from ita_estimator import get_ita_likelihood
 from eligibility_checker import check_eligibility
 from crs_calculator import calculate_crs
 from advice_engine import generate_advice
+from intent_detector import detect_intent
+import intent_detector
+print(f"📁 LOADED: {intent_detector.__file__}")
 
 
 app = FastAPI()
@@ -121,14 +124,41 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = [m.dict() for m in req.messages]
-    reply = await chat(messages, req.session_id)
+    
+    # Detect intent from last user message
+    intent_data = None
+    for m in reversed(messages):
+        if m["role"] == "user" and m.get("content"):
+            # Skip the system context message
+            if m["content"].startswith("The user just completed their CRS profile"):
+                continue
+            print(f"🔍 INTENT CHECK ON: '{m['content'][:100]}'")
+            intent_data = detect_intent(m["content"])
+            print(f"🔍 INTENT RESULT: {intent_data}")
+            break
+    
+    reply = await chat(messages, req.session_id, intent_data)
     return {"reply": reply}
+
 
 @app.post("/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest):
     messages = [m.dict() for m in req.messages]
+    
+    # Detect intent from last user message
+    intent_data = None
+    for m in reversed(messages):
+        if m["role"] == "user" and m.get("content"):
+            # Skip the system context message
+            if m["content"].startswith("The user just completed their CRS profile"):
+                continue
+            print(f"🔍 INTENT CHECK ON: '{m['content'][:100]}'")
+            intent_data = detect_intent(m["content"])
+            print(f"🔍 INTENT RESULT: {intent_data}")
+            break
+    
     return StreamingResponse(
-        chat_stream(messages, req.session_id),
+        chat_stream(messages, req.session_id, intent_data),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -42,10 +42,23 @@ def get_session(session_id: str) -> dict | None:
     return _sessions.get(session_id)
 
 
-#  SYSTEM PROMPT 
+def build_system_prompt(session: dict, intent_data: dict = None) -> str:
 
-def build_system_prompt(session: dict) -> str:
-    return f"""You are PRCompass, a Canadian Express Entry AI advisor.
+    if intent_data:
+        intent_instruction = f"""
+DETECTED USER INTENT: {intent_data['intent']}
+REQUIRED ACTION: {intent_data['instruction']}
+You MUST follow the required action above. Do not deviate from it.
+"""
+    else:
+        intent_instruction = """
+DETECTED USER INTENT: unknown
+The user's question did not match a known intent.
+Use your judgment to call the most appropriate tool if the question relates to their score, draws, or scenarios.
+If the question is completely unrelated to their Express Entry profile, politely tell them CanPR.ai only answers questions about CRS scores, draw history, and improvement scenarios. Suggest IRCC.ca or an RCIC for other immigration questions.
+"""
+
+    return f"""You are CanPR.ai, a Canadian Express Entry AI advisor.
 
 The user has already completed their CRS profile. Their data is stored server-side and available via tools.
 
@@ -59,6 +72,8 @@ YOUR JOB:
 - Be concise and conversational
 - Only discuss Canadian Express Entry immigration topics
 
+{intent_instruction}
+
 RULES:
 # Tool-based questions — always use tools
 - ALWAYS call get_active_profile then get_score_gaps when user asks how to improve their score. Never answer from memory.
@@ -66,10 +81,6 @@ RULES:
 - ALWAYS call calculate_crs when user asks about a specific scenario change. Never answer from memory.
 - ALWAYS call get_draw_history when user asks about recent draws or cutoff trends. Never answer from memory.
 - Never state point values, draw cutoffs, or timelines without calling a tool first.
-
-# Explanation questions — Claude can answer from knowledge
-- You can explain immigration concepts like CEC, FSW, NOC, CLB, PGWP, LMIA from your knowledge.
-- Keep explanations brief and always relate them back to the user's specific situation.
 
 # Personal advice questions — guide but don't decide
 - For questions like "should I apply now or wait", give a balanced answer based on tool data but always recommend consulting a Regulated Canadian Immigration Consultant (RCIC) for personal decisions.
@@ -85,7 +96,6 @@ RULES:
 - Keep responses concise — 3 to 5 sentences unless the user asks for more detail.
 - Always recommend verifying important decisions with IRCC's official website or an RCIC.
 """
-
 
 #  TOOL DEFINITIONS 
 
@@ -400,12 +410,19 @@ def execute_tool(tool_name: str, tool_input: dict, session: dict) -> str:
 
 #  MAIN CHAT FUNCTION ─
 
-async def chat(messages: list[dict], session_id: str) -> str:
+async def chat(messages: list[dict], session_id: str, intent_data: dict = None) -> str:
     session = get_session(session_id)
+
+    # Log intent detection result
+    if intent_data:
+        print(f"✅ INTENT DETECTED: {intent_data['intent']}")
+    else:
+        print(f"⚠️ NO INTENT DETECTED — Claude deciding autonomously")
+        
     if not session:
         return "Session not found. Please recalculate your CRS score."
 
-    system = build_system_prompt(session)
+    system = build_system_prompt(session, intent_data)
     tool_calls_made = 0
 
     while tool_calls_made <= MAX_TOOL_CALLS:
@@ -453,8 +470,8 @@ async def chat(messages: list[dict], session_id: str) -> str:
 
 #  STREAMING ─
 
-async def chat_stream(messages: list[dict], session_id: str = ""):
-    reply = await chat(messages, session_id)
+async def chat_stream(messages: list[dict], session_id: str = "", intent_data: dict = None):
+    reply = await chat(messages, session_id, intent_data)
     for token in reply.split(" "):
         yield f"data: {json.dumps({'token': token + ' '})}\n\n"
     yield "data: [DONE]\n\n"

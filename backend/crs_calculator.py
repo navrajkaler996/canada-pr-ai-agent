@@ -160,7 +160,7 @@ def get_skill_transferability_points(education_level, clb_scores, canadian_work_
 
     # education levels that qualify as post secondary
     post_secondary_one_year = education_level in ["one_year", "two_year", "bachelors", "two_or_more", "masters", "phd"]
-    post_secondary_three_plus = education_level in ["two_or_more", "masters", "phd", "bachelors"]
+    post_secondary_three_plus = education_level in ["two_or_more", "masters", "phd"]
     masters_or_phd = education_level in ["masters", "phd"]
 
     def get_education_language_points():
